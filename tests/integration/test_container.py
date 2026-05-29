@@ -48,7 +48,7 @@ def build_container_image():
 
 @pytest.fixture(scope="module")
 def app_container():
-    """Start app container with real Postgres; run migrations separately."""
+    """Start app container with real Postgres; run migrations inside the container."""
     with PostgresContainer("postgres:18") as pg:
         migration_url_host = _normalize_to_psycopg_sqlalchemy_url(pg.get_connection_url())
         migration_url_container = _replace_db_host(migration_url_host, "host.docker.internal")
@@ -84,23 +84,23 @@ def app_container():
                 "base_url": base_url,
                 "migration_url": migration_url_host,
                 "app_url": app_url_host,
+                "container_id": c.get_wrapped_container().id,
             }
 
 
 def test_container_health(app_container):
-    """Run migrations, assert audit schema artifacts, then verify health."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    env = {
-        **os.environ,
-        "ENV": "test",
-        "JWT_JWKS_URI": "http://identity:8014/.well-known/jwks.json",
-        "MIGRATION_DATABASE_URL": app_container["migration_url"],
-        "APP_DATABASE_URL": app_container["app_url"],
-    }
+    """Run migrations in-container (audit templates at /app/audit-templates), then verify health."""
     subprocess.run(
-        ["uv", "run", "alembic", "upgrade", "head"],
-        cwd=repo_root,
-        env=env,
+        [
+            "docker",
+            "exec",
+            app_container["container_id"],
+            "python",
+            "-m",
+            "alembic",
+            "upgrade",
+            "head",
+        ],
         check=True,
         stdout=subprocess.DEVNULL,
     )
@@ -124,6 +124,3 @@ def test_container_health(app_container):
             pass
         time.sleep(0.5)
     pytest.fail("Health endpoint did not become ready after migration.")
-
-
-
