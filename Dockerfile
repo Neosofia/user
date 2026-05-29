@@ -70,10 +70,10 @@ COPY .env.example .env
 # Audit SQL applied by Alembic migration 000
 COPY --from=audit-templates /sql/audit /app/audit-templates
 
-EXPOSE 8015
+EXPOSE 8018
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD python -c "import os, urllib.request; port = os.environ.get('PORT', '8015'); urllib.request.urlopen(f'http://localhost:{port}/health', timeout=3)" || exit 1
+    CMD python -c "import os, urllib.request; port = os.environ.get('PORT', '8018'); urllib.request.urlopen(f'http://localhost:{port}/health', timeout=3)" || exit 1
 
 USER app
 

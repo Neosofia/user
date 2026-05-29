@@ -1,5 +1,15 @@
 # Release notes
 
+## user v0.2.1
+
+Default HTTP port **8018** (CDP spec 018 → 8000 + 18). Update `PORT` / compose / `VITE_USER_API_URL` if you pinned 8015.
+
+### Tag
+
+`user/v0.2.1`
+
+---
+
 ## user v0.2.0
 
 Requires **authentication v0.30.0** and CDP UI **v0.2.0**.

@@ -50,7 +50,7 @@
 6. Check health:
 
    ```bash
-   curl http://localhost:8015/health
+   curl http://localhost:8018/health
    ```
 
 Protected routes need a platform JWT from the authentication service (`operator` Tier-1 role for list; Cedar governs per-user read/update). No user create API in Stage 2. See `openapi.json` for paths.
@@ -63,7 +63,7 @@ Run with authentication and the rest of the platform from the compose project th
 - Ensure authentication `JWT_WEB_AUDIENCE` includes `user`.
 - Build and start: `docker compose -f docker-compose.local.yml up -d --build` (paths vary by workspace layout).
 
-Service listens on **8015**. UI admin **Users** screen calls this API; tenant names come from authentication `GET /api/v1/tenants/{uuid}`.
+Service listens on **8018** (CDP spec 018 → port 8000 + 18). UI admin **Users** screen calls this API; tenant names come from authentication `GET /api/v1/tenants/{uuid}`.
 
 ## Docker build and run
 
@@ -71,7 +71,7 @@ From this repository:
 
 ```bash
 docker build --target runtime -t user:local .
-docker run -d --rm -p 8015:8015 -e ENV=development --env-file .env --name user-dev user:local
+docker run -d --rm -p 8018:8018 -e ENV=development --env-file .env --name user-dev user:local
 ```
 
 Run migrations via a one-off migrate container or `uv run alembic upgrade head` against the same database URLs.
