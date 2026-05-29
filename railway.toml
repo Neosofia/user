@@ -1,0 +1,19 @@
+[[services]]
+name = "postgres"
+source.image = "ghcr.io/railwayapp-templates/postgres-ssl:18"
+
+[[services.volumes]]
+mountPath = "/var/lib/postgresql/data"
+
+[services.variables]
+PGPORT = "5432"
+PGDATABASE = "${{POSTGRES_DB}}"
+PGUSER = "${{POSTGRES_USER}}"
+PGPASSWORD = "${{POSTGRES_PASSWORD}}"
+POSTGRES_DB = "python_template"
+POSTGRES_USER = "template"
+POSTGRES_PASSWORD = "${{secret()}}"
+
+# Python template service migrations run once per deploy, not on every container start.
+[deploy]
+preDeployCommand = ["python -m alembic upgrade head"]

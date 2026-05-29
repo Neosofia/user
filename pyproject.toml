@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "user"
+version = "0.2.0"
+description = "Neosofia User Service — Tier-2 platform roles and scope attributes."
+requires-python = ">=3.14"
+authors = [{ name = "Neosofia", email = "platform@neosofia.com" }]
+dependencies = [
+    "alembic>=1.13.0",
+    "authentication-in-the-middle",
+    "authorization-in-the-middle",
+    "flask>=3.0.0",
+    "flask-limiter>=3.5.0",
+    "flask-talisman>=1.1.0",
+    "gunicorn>=21.2.0",
+    "psycopg[binary]>=3.2.0",
+    "pydantic>=2.8.0,<3.0.0",
+    "pydantic-settings>=2.0.0,<3.0.0",
+    "logenvelope",
+    "sqlalchemy>=2.0.0",
+    "python-dotenv>=1.2.2",
+    "flask-cors>=6.0.2",
+    "cedarpy==4.8.1",
+]
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "alembic.ini",
+    "src/**/*.py",
+    "policies/**",
+    "tests/**",
+    ".github/workflows/**",
+    ".env.example",
+    "Dockerfile",
+    "README.md",
+    "OPERATIONS.md",
+    "SECURITY.md",
+    "openapi.json",
+    "pyproject.toml",
+    ".gitignore",
+]
+
+[tool.uv.sources]
+authorization-in-the-middle = { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.4/authorization_in_the_middle-0.4.4-py3-none-any.whl" }
+authentication-in-the-middle = { url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.2/authentication_in_the_middle-0.9.2-py3-none-any.whl" }
+logenvelope = { url = "https://github.com/Neosofia/sdk/releases/download/logenvelope-0.3.0/logenvelope-0.3.0-py3-none-any.whl" }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "jsonschema>=4.20.0",
+    "requests>=2.33.0",
+    "testcontainers>=3.7.0",
+    "pyjwt>=2.12.1",
+    "cryptography>=48.0.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--import-mode=importlib --cov=src --cov-report=term-missing --cov-fail-under=90"
+markers = [
+    "unit: pure function tests with no external I/O",
+    "integration: happy-path and contract adherence tests using the Flask test client",
+    "slow: long-running container or end-to-end integration tests",
+]
+pythonpath = ["."]
+
+[tool.coverage.run]
+omit = [
+    "*/migrations/*",
+    "src/db/*",
+    "src/gunicorn*.py",
+    "src/bootstrap/config.py",
+]

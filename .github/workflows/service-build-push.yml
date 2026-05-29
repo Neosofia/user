@@ -1,0 +1,29 @@
+name: service-build-push
+
+on:
+  push:
+    tags:
+      - 'user/*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    name: Test
+    uses: Neosofia/platform-workflows/.github/workflows/_test-python.yml@main
+
+  scan:
+    name: Vulnerability Scan
+    uses: Neosofia/platform-workflows/.github/workflows/_scan.yml@main
+
+  build-push:
+    name: Build & Push to GHCR
+    needs: [test, scan]
+    uses: Neosofia/platform-workflows/.github/workflows/_build-push.yml@main
+    with:
+      image_name: ghcr.io/${{ github.repository_owner }}/user
+      tag_prefix: user
+      cache_scope: user

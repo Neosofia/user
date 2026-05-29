@@ -1,0 +1,143 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "User Service API",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "status": { "type": "string" } },
+                  "required": ["status"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "User list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserListResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "get": {
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/roles": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Role catalog",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RoleCatalog" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Same as Authentication users.uuid (JWT sub)"
+          },
+          "tenant_uuid": { "type": "string", "format": "uuid" },
+          "idp_id": { "type": "string" },
+          "first_name": { "type": "string", "nullable": true },
+          "last_name": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "platform_roles": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["uuid", "tenant_uuid", "idp_id", "platform_roles"]
+      },
+      "UserListResponse": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/User" } },
+          "total": { "type": "integer" },
+          "page": { "type": "integer" },
+          "page_size": { "type": "integer" }
+        },
+        "required": ["items", "total", "page", "page_size"]
+      },
+      "RoleCatalog": {
+        "type": "object",
+        "properties": {
+          "actor_classes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tier-1 JWT roles (operator, clinician, patient); not stored on user rows"
+          },
+          "platform_roles": { "type": "array", "items": { "type": "string" } },
+          "assigner_tier1_roles": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tier-1 roles from the JWT used to filter assignable platform_roles"
+          }
+        },
+        "required": ["actor_classes", "platform_roles"]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "invalid_request",
+              "conflict",
+              "not_found",
+              "forbidden",
+              "unauthorized",
+              "authorization_unavailable",
+              "database error",
+              "internal_server_error",
+              "http_error",
+              "method_not_allowed",
+              "payload_too_large"
+            ]
+          },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

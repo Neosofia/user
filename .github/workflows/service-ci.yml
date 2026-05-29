@@ -1,0 +1,27 @@
+name: service-ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+
+jobs:
+  test:
+    name: Test & Coverage
+    uses: Neosofia/platform-workflows/.github/workflows/_test-python.yml@main
+    with:
+      upload_coverage: true
+      codecov_flags: user
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  scan:
+    name: Vulnerability Scan
+    uses: Neosofia/platform-workflows/.github/workflows/_scan.yml@main
