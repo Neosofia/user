@@ -17,6 +17,7 @@
    | `JWT_AUDIENCE` | Expected JWT audience (include authentication service) |
    | `JWT_JWKS_URI` or `JWT_PUBLIC_KEY` | Verify platform JWTs |
    | `JWT_CLAIM_NAMESPACE` | Custom claim prefix (default `neosofia`; must match Authentication) |
+   | `ROLE_CATALOG_OVERLAY` | Optional JSON file merged into the default role catalog |
 
    Local example (Postgres on host port `5015` when using compose):
 
@@ -53,7 +54,19 @@
    curl http://localhost:8018/health
    ```
 
-Protected routes need a platform JWT from the authentication service (`operator` Tier-1 role for list; Cedar governs per-user read/update). No user create API in Stage 2. See `openapi.json` for paths.
+Protected routes need a platform JWT from the authentication service (`operator` Tier-1 role plus `operator.platform-admin` for list/admin updates; Cedar governs per-user read/update). There is no public user create API. See `openapi.json` for paths.
+
+Authentication provisions registry rows with `PUT /api/v1/users/{uuid}` using a service token with `aud=user`. The route is idempotent: first login creates the row with empty `platform_roles`; later logins refresh identity fields and leave `platform_roles` unchanged.
+
+### Bootstrapping the first operator
+
+Because provisioning always creates rows with empty `platform_roles`, the very first operator cannot grant themselves `operator.platform-admin` through the API (Cedar denies list/admin-update without it). After that operator has logged in once (creating their row), an administrator with database access must seed the role directly, e.g.:
+
+```sql
+UPDATE users SET platform_roles = ARRAY['operator.platform-admin'] WHERE email = '<first-operator-email>';
+```
+
+Subsequent operators can then be granted roles through **Admin → Users** in the UI.
 
 ## Full stack (compose)
 
@@ -61,6 +74,7 @@ Run with authentication and the rest of the platform from the compose project th
 
 - Copy `.user.env.sample` → `.user.env` and `.user-postgres.env.sample` → `.user-postgres.env` (alongside other service env files).
 - Ensure authentication `JWT_WEB_AUDIENCE` includes `user`.
+- Mount product role overlays and set `ROLE_CATALOG_OVERLAY` when domain-specific roles are needed.
 - Build and start: `docker compose -f docker-compose.local.yml up -d --build` (paths vary by workspace layout).
 
 Service listens on **8018** (CDP spec 018 → port 8000 + 18). UI admin **Users** screen calls this API; tenant names come from authentication `GET /api/v1/tenants/{uuid}`.

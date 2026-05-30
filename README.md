@@ -4,7 +4,7 @@ Authoritative store for **Tier-2 platform roles** on human principals. Authentic
 
 Design background: authentication service issue #11 (role model for post-discharge care). Implementation scope: `cdp/specs/018-user-service.md`.
 
-**Provisioning (Stage 2 vs 3):** This service does not expose `POST /api/v1/users`. Registry rows are seeded manually or by migration for Stage 2 demos. **Stage 3** will flip the flow: authentication continues to own identity cache; on login it will best-effort **create/update** the Tier-2 profile here (this service stays the source of truth for `platform_roles`).
+**Provisioning:** This service does not expose `POST /api/v1/users`. Authentication continues to own identity cache; on login it best-effort **creates or updates** the Tier-2 profile here through `PUT /api/v1/users/{uuid}`. This service stays the source of truth for `platform_roles`.
 
 ## Glossary
 
@@ -45,7 +45,7 @@ operator.platform-admin            ← mesh / user admin (not a clinical title)
 operator.audit-reader
 ```
 
-Stage 2 ships a **subset** of this tree in code (`src/domain/role_catalog.py`); the full hierarchy in the issue is the long-term target.
+The core service ships a generic role catalog in `roles/default.json`. Product deployments can mount a JSON overlay with domain-specific branches such as the clinical and research examples below.
 
 ## Examples (from issue #11)
 
@@ -104,8 +104,9 @@ Recovery timing and episode lifecycle are **Tier 3 state** (e.g. Care Episode). 
 **Protected (`@with_security` + Cedar):**
 
 - `GET /api/v1/roles` — v1 role catalog (allowed `actor_class` + `platform_roles`)
-- `GET /api/v1/users` — list (operator; Cedar `user:list` on `UserCatalog`). **No POST in Stage 2** — user rows will be provisioned from authentication on login (Stage 3).
+- `GET /api/v1/users` — list (operator with `operator.platform-admin`; Cedar `user:list` on `UserCatalog`). **No public POST** — user rows are provisioned from authentication on login.
 - `GET|PATCH /api/v1/users/{uuid}` — read/update user record (self or `operator.platform-admin`; Cedar `user:read` / `user:update` on `User`)
 - `GET /api/v1/users/{uuid}/audits` — audit trail
+- `PUT /api/v1/users/{uuid}` — authentication-service provisioning callback; inserts on first login and refreshes identity fields on later logins without changing `platform_roles`
 
 Contract: `openapi.json`.

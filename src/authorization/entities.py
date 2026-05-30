@@ -11,6 +11,7 @@ This service authorizes user-registry operations:
 | GET/PATCH /api/v1/users/{user_id} | user:read, user:update | users::User (target row) |
 | GET /api/v1/users | user:list | users::UserCatalog |
 | GET /api/v1/roles | role_catalog:read | users::RoleCatalog |
+| PUT /api/v1/users/{user_id} | user:provision | users::UserProvisioning |
 """
 from __future__ import annotations
 
@@ -25,6 +26,9 @@ from src.bootstrap.config import settings
 NAMESPACE = "users"
 USER_CATALOG_ID = "user-catalog"
 ROLE_CATALOG_ID = "role-catalog"
+# Singleton Cedar resource id for the provision action. We authorize the
+# provisioning capability itself because the target user row may not exist yet.
+USER_PROVISIONING_ID = "user-provisioning"
 
 
 def _jwt_claim(name: str) -> str:
@@ -36,6 +40,8 @@ def resolve_principal() -> dict[str, Any]:
 
     claims = _claims()
     sub = principal_sub()
+    if principal_token_type() == "service":
+        return build_service_principal_entity(sub, claims)
     try:
         return build_principal_entity(user_service.get_user_or_404(sub), claims)
     except NotFound:
@@ -49,6 +55,11 @@ def principal_sub() -> str:
 def principal_is_operator() -> bool:
     """True when Cedar would set isOperator (Tier-1 operator on the JWT)."""
     return "operator" in _jwt_tier1_roles(_claims())
+
+
+def principal_token_type() -> str:
+    claims = _claims()
+    return str(claims.get(_jwt_claim("token_type")) or claims.get("token_type") or "human")
 
 
 def _claims() -> dict[str, Any]:
@@ -96,6 +107,7 @@ def _user_attrs(row: dict[str, Any], claims: dict[str, Any]) -> dict[str, Any]:
         "uuid": row["uuid"],
         "tenantId": row["tenant_uuid"],
         "actorClass": "",
+        "tokenType": principal_token_type(),
         "isPlatformAdmin": "operator.platform-admin" in platform_roles,
         "isOperator": "operator" in jwt_roles,
     }
@@ -113,8 +125,20 @@ def _principal_from_claims(claims: dict[str, Any]) -> dict[str, Any]:
             "uuid": sub,
             "tenantId": str(tenant_uuid),
             "actorClass": "operator" if "operator" in jwt_roles else "",
+            "tokenType": principal_token_type(),
             "isPlatformAdmin": False,
             "isOperator": "operator" in jwt_roles,
+        },
+    )
+
+
+def build_service_principal_entity(service_slug: str, claims: dict[str, Any]) -> dict[str, Any]:
+    return build_entity_payload(
+        f"{NAMESPACE}::Service",
+        service_slug,
+        {
+            "serviceSlug": service_slug,
+            "tokenType": str(claims.get(_jwt_claim("token_type")) or claims.get("token_type") or ""),
         },
     )
 
@@ -141,5 +165,9 @@ def build_user_catalog_entity() -> dict[str, Any]:
 
 def build_role_catalog_entity() -> dict[str, Any]:
     return build_entity_payload(f"{NAMESPACE}::RoleCatalog", ROLE_CATALOG_ID, {})
+
+
+def build_user_provisioning_entity() -> dict[str, Any]:
+    return build_entity_payload(f"{NAMESPACE}::UserProvisioning", USER_PROVISIONING_ID, {})
 
 

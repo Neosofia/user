@@ -6,6 +6,7 @@ from src.bootstrap.capabilities import Capabilities
 from src.bootstrap.config import settings
 from src.domain.role_catalog import (
     TIER1_ACTOR_CLASSES,
+    assigner_prefixes,
     platform_roles_for_tier1_roles,
 )
 
@@ -25,5 +26,10 @@ def list_roles():
     return jsonify({
         "actor_classes": sorted(TIER1_ACTOR_CLASSES),
         "platform_roles": roles,
+        "assigner_prefixes": {
+            tier1: list(prefixes)
+            for tier1, prefixes in sorted(assigner_prefixes().items())
+            if tier1 in tier1_roles
+        },
         "assigner_tier1_roles": tier1_roles,
     }), 200

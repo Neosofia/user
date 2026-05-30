@@ -24,6 +24,7 @@ _UNSUPPORTED_SCOPE_FIELDS = frozenset({
     "site_group_uuid",
     "authorized_study_ids",
 })
+_PROVISION_FIELDS = frozenset({"tenant_uuid", "idp_id", "first_name", "last_name", "email"})
 
 
 def _parse_pagination() -> tuple[int, int] | tuple[None, tuple]:
@@ -89,6 +90,43 @@ def _validate_update_payload(data: dict, *, self_service: bool) -> str | None:
         except ValueError:
             return "tenant_uuid must be a UUID"
     return None
+
+
+def _validate_provision_payload(user_id: str, data: dict) -> str | None:
+    try:
+        _uuid.UUID(str(user_id))
+    except ValueError:
+        return "user_id must be a UUID"
+    if not isinstance(data, dict) or not data:
+        return "body must be a JSON object"
+    missing = sorted(_PROVISION_FIELDS - data.keys())
+    if missing:
+        return f"missing required fields: {missing}"
+    extra = sorted(set(data.keys()) - _PROVISION_FIELDS)
+    if extra:
+        return f"unsupported fields: {extra}"
+    try:
+        _uuid.UUID(str(data["tenant_uuid"]))
+    except ValueError:
+        return "tenant_uuid must be a UUID"
+    if not str(data.get("idp_id") or "").strip():
+        return "idp_id is required"
+    for field in ("first_name", "last_name", "email"):
+        value = data.get(field)
+        if value is not None and not isinstance(value, str):
+            return f"{field} must be a string or null"
+    return None
+
+
+def _provision_entities() -> list[dict]:
+    return [
+        auth_entities.resolve_principal(),
+        auth_entities.build_user_provisioning_entity(),
+    ]
+
+
+def _provision_resource() -> str:
+    return f'{auth_entities.NAMESPACE}::UserProvisioning::"{auth_entities.USER_PROVISIONING_ID}"'
 
 
 def init_user_routes(app, cedar_evaluator) -> None:
@@ -170,4 +208,29 @@ def get_user_audits(user_id: str):
             }), 200
     except Exception as exc:
         log_event("get_user_audits_failed", error_type=type(exc).__name__)
+        return jsonify({"error": "database error"}), 500
+
+
+@bp.route("/<user_id>", methods=["PUT"])
+@with_security(
+    action=Capabilities.USER_PROVISION,
+    resource_fn=_provision_resource,
+    entities_fn=_provision_entities,
+    enforce_active_role=False,
+    rate_limit=settings.user_write_rate_limit,
+)
+def provision_user(user_id: str):
+    data = request.get_json(silent=True) or {}
+    message = _validate_provision_payload(user_id, data)
+    if message:
+        return jsonify({"error": "invalid_request", "message": message}), 400
+    try:
+        with SessionLocal() as db:
+            item, created = user_service.provision_user_identity(db, user_id, data)
+            log_event("user_provisioned", user_uuid=user_id, created=created)
+            return jsonify(item), 201 if created else 200
+    except user_service.ConflictError:
+        return jsonify({"error": "conflict", "message": "user provisioning conflict"}), 409
+    except Exception as exc:
+        log_event("provision_user_failed", error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500

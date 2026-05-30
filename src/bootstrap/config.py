@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # Authorization settings
     authorization_policies_dir: Path = Field(default=Path("policies"))
     authorization_policy_cache_ttl: int = Field(default=60, ge=0)
+    role_catalog_overlay: Path | None = Field(default=None)
     
     # JWT authentication settings
     jwt_public_key: str | None = Field(default=None)
@@ -80,6 +81,13 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [entry.strip() for entry in value.split(",") if entry.strip()]
         return [entry.strip() for entry in value if isinstance(entry, str) and entry.strip()]
+
+    @field_validator("role_catalog_overlay", mode="before")
+    @classmethod
+    def normalize_role_catalog_overlay(cls, value: object) -> Path | None:
+        if value is None or not str(value).strip():
+            return None
+        return Path(str(value).strip())
 
     @field_validator(
         "port",

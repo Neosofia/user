@@ -1,0 +1,14 @@
+{
+  "roles": [
+    "operator.platform-admin",
+    "operator.audit-reader",
+    "staff.function.member",
+    "staff.function.readonly",
+    "enduser.function.self"
+  ],
+  "assigner_prefixes": {
+    "operator": ["operator."],
+    "clinician": ["staff."],
+    "patient": ["enduser."]
+  }
+}

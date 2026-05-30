@@ -37,6 +37,7 @@ FROM test-deps AS test
 COPY alembic.ini ./alembic.ini
 COPY src ./src
 COPY tests ./tests
+COPY roles ./roles
 COPY policies ./policies
 COPY openapi.json ./openapi.json
 
@@ -63,6 +64,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 COPY alembic.ini ./alembic.ini
 COPY src ./src
+COPY roles ./roles
 COPY policies ./policies
 COPY openapi.json ./openapi.json
 COPY .env.example .env

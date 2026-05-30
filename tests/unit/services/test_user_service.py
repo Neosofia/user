@@ -127,13 +127,73 @@ def test_update_user_operator_fields():
         str(USER_ID),
         {
             "tenant_uuid": str(new_tenant),
-            "platform_roles": ["clinical.function.staff-nurse"],
+            "platform_roles": ["staff.function.member"],
         },
         self_service=False,
     )
 
     assert row.tenant_uuid == new_tenant
-    assert row.platform_roles == ["clinical.function.staff-nurse"]
+    assert row.platform_roles == ["staff.function.member"]
+
+
+def _provision_payload(**overrides) -> dict:
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "idp_id": "user_abc",
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "email": "ada@example.com",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_provision_user_identity_inserts_with_empty_roles():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+
+    result, created = user_service.provision_user_identity(
+        mock_db,
+        str(USER_ID),
+        _provision_payload(),
+    )
+
+    row = mock_db.add.call_args.args[0]
+    assert created is True
+    assert row.uuid == USER_ID
+    assert row.platform_roles == []
+    assert row.changed_by_type == user_service.SERVICE_ACTOR_TYPE
+    assert result["email"] == "ada@example.com"
+
+
+def test_provision_user_identity_updates_identity_only():
+    mock_db = MagicMock()
+    row = _user_row(platform_roles=["operator.platform-admin"])
+    mock_db.get.return_value = row
+
+    result, created = user_service.provision_user_identity(
+        mock_db,
+        str(USER_ID),
+        _provision_payload(first_name=" Grace ", email="grace@example.com"),
+    )
+
+    assert created is False
+    assert row.first_name == "Grace"
+    assert row.email == "grace@example.com"
+    assert row.platform_roles == ["operator.platform-admin"]
+    assert result["platform_roles"] == ["operator.platform-admin"]
+
+
+def test_provision_user_identity_integrity_conflict():
+    mock_db = MagicMock()
+    row = _user_row()
+    mock_db.get.return_value = row
+    mock_db.commit.side_effect = IntegrityError("stmt", {}, Exception("dup"))
+
+    with pytest.raises(user_service.ConflictError):
+        user_service.provision_user_identity(mock_db, str(USER_ID), _provision_payload())
+
+    mock_db.rollback.assert_called_once()
 
 
 def test_update_user_not_found():

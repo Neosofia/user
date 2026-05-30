@@ -7,14 +7,13 @@ permit (
     principal.uuid == resource.uuid
 };
 
-// Interim: Tier-1 operators may do anything with user records and the user catalog.
-// Refine (e.g. platform-admin scopes) after admin UI testing. See entities.py for isOperator.
+// Operators need the Tier-2 platform-admin role before managing other records.
 permit (
     principal is users::User,
     action in [Action::"user:read", Action::"user:update"],
     resource is users::User
 ) when {
-    principal.isOperator
+    principal.isOperator && principal.isPlatformAdmin
 };
 
 permit (
@@ -22,7 +21,15 @@ permit (
     action == Action::"user:list",
     resource is users::UserCatalog
 ) when {
-    principal.isOperator
+    principal.isOperator && principal.isPlatformAdmin
+};
+
+permit (
+    principal is users::Service,
+    action == Action::"user:provision",
+    resource is users::UserProvisioning
+) when {
+    principal.tokenType == "service" && principal.serviceSlug == "authentication"
 };
 
 // Any authenticated principal may read the role catalog (CDP user admin UI).

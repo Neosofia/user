@@ -13,6 +13,10 @@ class ConflictError(Exception):
     pass
 
 
+SYSTEM_ACTOR_UUID = _uuid.UUID("00000000-0000-7000-8000-000000000000")
+SERVICE_ACTOR_TYPE = 2
+
+
 def _row_to_dict(row: User) -> dict:
     return {
         "uuid": str(row.uuid),
@@ -93,6 +97,51 @@ def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_serv
         raise ConflictError("user update conflict") from exc
     db.refresh(row)
     return _row_to_dict(row)
+
+
+def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bool]:
+    target_id = _uuid.UUID(str(user_uuid))
+    tenant_id = _uuid.UUID(str(payload["tenant_uuid"]))
+    row = db.get(User, target_id)
+    created = row is None
+
+    values = {
+        "tenant_uuid": tenant_id,
+        "idp_id": str(payload["idp_id"]).strip(),
+        "first_name": (str(payload["first_name"]).strip() or None)
+        if payload.get("first_name") is not None
+        else None,
+        "last_name": (str(payload["last_name"]).strip() or None)
+        if payload.get("last_name") is not None
+        else None,
+        "email": (str(payload["email"]).strip() or None)
+        if payload.get("email") is not None
+        else None,
+    }
+
+    if created:
+        row = User(
+            uuid=target_id,
+            platform_roles=[],
+            changed_by_uuid=SYSTEM_ACTOR_UUID,
+            changed_by_type=SERVICE_ACTOR_TYPE,
+            **values,
+        )
+        db.add(row)
+    else:
+        for field, value in values.items():
+            setattr(row, field, value)
+        row.changed_by_uuid = SYSTEM_ACTOR_UUID
+        row.changed_by_type = SERVICE_ACTOR_TYPE
+        row.change_type = 2
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError("user provisioning conflict") from exc
+    db.refresh(row)
+    return _row_to_dict(row), created
 
 
 def get_user_audits(db, user_uuid: str, page: int, page_size: int) -> tuple[list[dict], int]:

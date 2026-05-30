@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "User Service API",
-    "version": "0.2.1"
+    "version": "0.3.0"
   },
   "paths": {
     "/health": {
@@ -48,6 +48,87 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user profile",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["users"],
+        "summary": "Provision or refresh a user registry row from Authentication",
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserProvisionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing row refreshed; platform_roles unchanged",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          },
+          "201": {
+            "description": "Registry row created with empty platform_roles",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the authentication service token may call this route",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/audits": {
+      "get": {
+        "parameters": [
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User audit history",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserAuditListResponse" }
               }
             }
           }
@@ -98,6 +179,58 @@
         },
         "required": ["items", "total", "page", "page_size"]
       },
+      "UserUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "tenant_uuid": { "type": "string", "format": "uuid" },
+          "first_name": { "type": "string", "nullable": true },
+          "last_name": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "platform_roles": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      },
+      "UserProvisionRequest": {
+        "type": "object",
+        "properties": {
+          "tenant_uuid": { "type": "string", "format": "uuid" },
+          "idp_id": { "type": "string" },
+          "first_name": { "type": "string", "nullable": true },
+          "last_name": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true }
+        },
+        "required": ["tenant_uuid", "idp_id", "first_name", "last_name", "email"],
+        "additionalProperties": false
+      },
+      "UserAuditItem": {
+        "type": "object",
+        "properties": {
+          "history_uuid": { "type": "string", "format": "uuid", "nullable": true },
+          "uuid": { "type": "string", "format": "uuid" },
+          "tenant_uuid": { "type": "string", "format": "uuid" },
+          "idp_id": { "type": "string" },
+          "first_name": { "type": "string", "nullable": true },
+          "last_name": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "platform_roles": { "type": "array", "items": { "type": "string" } },
+          "changed_at": { "type": "string", "format": "date-time" },
+          "changed_by_uuid": { "type": "string", "format": "uuid" },
+          "changed_by_type": { "type": "integer" },
+          "change_type": { "type": "integer" }
+        },
+        "required": ["uuid", "tenant_uuid", "idp_id", "platform_roles", "changed_at", "changed_by_uuid", "changed_by_type", "change_type"]
+      },
+      "UserAuditListResponse": {
+        "type": "object",
+        "properties": {
+          "user_uuid": { "type": "string", "format": "uuid" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/UserAuditItem" } },
+          "total": { "type": "integer" },
+          "page": { "type": "integer" },
+          "page_size": { "type": "integer" }
+        },
+        "required": ["user_uuid", "items", "total", "page", "page_size"]
+      },
       "RoleCatalog": {
         "type": "object",
         "properties": {
@@ -111,9 +244,17 @@
             "type": "array",
             "items": { "type": "string" },
             "description": "Tier-1 roles from the JWT used to filter assignable platform_roles"
+          },
+          "assigner_prefixes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "description": "Catalog prefixes registered for the assigner's Tier-1 roles"
           }
         },
-        "required": ["actor_classes", "platform_roles"]
+        "required": ["actor_classes", "platform_roles", "assigner_tier1_roles"]
       },
       "ErrorResponse": {
         "type": "object",
@@ -126,6 +267,7 @@
               "conflict",
               "not_found",
               "forbidden",
+              "unauthenticated",
               "unauthorized",
               "authorization_unavailable",
               "database error",
