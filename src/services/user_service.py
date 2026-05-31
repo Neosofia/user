@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import uuid as _uuid
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from werkzeug.exceptions import NotFound
 
-from src.models.user import User
+from src.bootstrap.logging_config import log_event
+from src.models.user import User, UserHistory
 
 
 class ConflictError(Exception):
@@ -15,6 +16,8 @@ class ConflictError(Exception):
 
 SYSTEM_ACTOR_UUID = _uuid.UUID("00000000-0000-7000-8000-000000000000")
 SERVICE_ACTOR_TYPE = 2
+PLATFORM_ADMIN_ROLE = "operator.platform-admin"
+TIER1_OPERATOR_ROLE = "operator"
 
 
 def _row_to_dict(row: User) -> dict:
@@ -39,16 +42,15 @@ def get_user_or_404(user_id: str) -> dict:
 
     with SessionLocal() as db:
         row = db.get(User, user_uuid)
-        if row is None or row.change_type == 3:
+        if row is None:
             raise NotFound()
         return _row_to_dict(row)
 
 
 def list_users(db, page: int, page_size: int, search: str) -> tuple[list[dict], int]:
-    query = (
-        select(User)
-        .where(User.change_type != 3)
-        .order_by(User.last_name.asc().nulls_last(), User.first_name.asc().nulls_last())
+    query = select(User).order_by(
+        User.last_name.asc().nulls_last(),
+        User.first_name.asc().nulls_last(),
     )
     if search:
         pattern = f"%{search}%"
@@ -68,7 +70,7 @@ def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_serv
     actor_id = _uuid.UUID(str(actor_uuid))
     target_id = _uuid.UUID(str(user_uuid))
     row = db.get(User, target_id)
-    if row is None or row.change_type == 3:
+    if row is None:
         raise NotFound()
 
     if self_service:
@@ -99,6 +101,32 @@ def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_serv
     return _row_to_dict(row)
 
 
+def _tier1_roles(payload: dict) -> list[str]:
+    roles = payload.get("tier1_roles")
+    if roles is None:
+        return []
+    if not isinstance(roles, list):
+        return []
+    return [str(role).strip() for role in roles if str(role).strip()]
+
+
+def _active_platform_admin_exists(db) -> bool:
+    count = db.scalar(
+        select(func.count())
+        .select_from(User)
+        .where(User.platform_roles.contains([PLATFORM_ADMIN_ROLE]))
+    )
+    return int(count or 0) > 0
+
+
+def _bootstrap_platform_admin_roles(db, payload: dict) -> list[str]:
+    if TIER1_OPERATOR_ROLE not in _tier1_roles(payload):
+        return []
+    if _active_platform_admin_exists(db):
+        return []
+    return [PLATFORM_ADMIN_ROLE]
+
+
 def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bool]:
     target_id = _uuid.UUID(str(user_uuid))
     tenant_id = _uuid.UUID(str(payload["tenant_uuid"]))
@@ -120,9 +148,12 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
     }
 
     if created:
+        platform_roles = _bootstrap_platform_admin_roles(db, payload)
+        if platform_roles:
+            log_event("first_operator_bootstrapped")
         row = User(
             uuid=target_id,
-            platform_roles=[],
+            platform_roles=platform_roles,
             changed_by_uuid=SYSTEM_ACTOR_UUID,
             changed_by_type=SERVICE_ACTOR_TYPE,
             **values,
@@ -133,7 +164,6 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
             setattr(row, field, value)
         row.changed_by_uuid = SYSTEM_ACTOR_UUID
         row.changed_by_type = SERVICE_ACTOR_TYPE
-        row.change_type = 2
 
     try:
         db.commit()
@@ -145,34 +175,24 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
 
 
 def get_user_audits(db, user_uuid: str, page: int, page_size: int) -> tuple[list[dict], int]:
-    from sqlalchemy import text
-
     target = _uuid.UUID(str(user_uuid))
-    exists = db.get(User, target)
-    if exists is None:
+    if db.get(User, target) is None:
         raise NotFound()
 
-    count_sql = text(
-        """
-        SELECT count(*) FROM users_audit
-        WHERE uuid = :user_uuid
-        """
+    history_table = UserHistory.__table__
+    where_clause = history_table.c.uuid == target
+    query = (
+        select(history_table)
+        .where(where_clause)
+        .order_by(history_table.c.changed_at.desc())
     )
-    total = db.scalar(count_sql, {"user_uuid": target})
 
-    rows = db.execute(
-        text(
-            """
-            SELECT history_uuid, uuid, tenant_uuid, idp_id, first_name, last_name, email,
-                   platform_roles, changed_at, changed_by_uuid, changed_by_type, change_type
-            FROM users_audit
-            WHERE uuid = :user_uuid
-            ORDER BY changed_at DESC
-            OFFSET :offset LIMIT :limit
-            """
-        ),
-        {"user_uuid": target, "offset": (page - 1) * page_size, "limit": page_size},
-    ).mappings().all()
+    total = db.scalar(
+        select(func.count()).select_from(
+            select(history_table).where(where_clause).subquery()
+        )
+    )
+    rows = db.execute(query.offset((page - 1) * page_size).limit(page_size)).mappings().all()
 
     items = []
     for row in rows:

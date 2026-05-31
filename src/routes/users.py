@@ -25,6 +25,7 @@ _UNSUPPORTED_SCOPE_FIELDS = frozenset({
     "authorized_study_ids",
 })
 _PROVISION_FIELDS = frozenset({"tenant_uuid", "idp_id", "first_name", "last_name", "email"})
+_PROVISION_OPTIONAL_FIELDS = frozenset({"tier1_roles"})
 
 
 def _parse_pagination() -> tuple[int, int] | tuple[None, tuple]:
@@ -102,7 +103,7 @@ def _validate_provision_payload(user_id: str, data: dict) -> str | None:
     missing = sorted(_PROVISION_FIELDS - data.keys())
     if missing:
         return f"missing required fields: {missing}"
-    extra = sorted(set(data.keys()) - _PROVISION_FIELDS)
+    extra = sorted(set(data.keys()) - _PROVISION_FIELDS - _PROVISION_OPTIONAL_FIELDS)
     if extra:
         return f"unsupported fields: {extra}"
     try:
@@ -111,6 +112,10 @@ def _validate_provision_payload(user_id: str, data: dict) -> str | None:
         return "tenant_uuid must be a UUID"
     if not str(data.get("idp_id") or "").strip():
         return "idp_id is required"
+    tier1_roles = data.get("tier1_roles")
+    if tier1_roles is not None:
+        if not isinstance(tier1_roles, list) or any(not isinstance(role, str) for role in tier1_roles):
+            return "tier1_roles must be an array of strings"
     for field in ("first_name", "last_name", "email"):
         value = data.get(field)
         if value is not None and not isinstance(value, str):

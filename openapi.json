@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "User Service API",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   "paths": {
     "/health": {
@@ -100,7 +100,7 @@
             }
           },
           "201": {
-            "description": "Registry row created with empty platform_roles",
+            "description": "Registry row created; first Tier-1 operator receives operator.platform-admin when none exists",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/User" }
@@ -197,7 +197,12 @@
           "idp_id": { "type": "string" },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true }
+          "email": { "type": "string", "nullable": true },
+          "tier1_roles": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tier-1 actor classes from Authentication (used to bootstrap the first operator.platform-admin)"
+          }
         },
         "required": ["tenant_uuid", "idp_id", "first_name", "last_name", "email"],
         "additionalProperties": false

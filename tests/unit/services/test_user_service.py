@@ -47,16 +47,6 @@ def test_get_user_or_404_missing_row(mock_session_local):
 
 
 @patch("src.db.engine.SessionLocal")
-def test_get_user_or_404_deleted_row(mock_session_local):
-    mock_db = MagicMock()
-    mock_session_local.return_value.__enter__.return_value = mock_db
-    mock_db.get.return_value = _user_row(change_type=3)
-
-    with pytest.raises(NotFound):
-        user_service.get_user_or_404(str(USER_ID))
-
-
-@patch("src.db.engine.SessionLocal")
 def test_get_user_or_404_returns_dict(mock_session_local):
     mock_db = MagicMock()
     mock_session_local.return_value.__enter__.return_value = mock_db
@@ -151,11 +141,12 @@ def _provision_payload(**overrides) -> dict:
 def test_provision_user_identity_inserts_with_empty_roles():
     mock_db = MagicMock()
     mock_db.get.return_value = None
+    mock_db.scalar.return_value = 0
 
     result, created = user_service.provision_user_identity(
         mock_db,
         str(USER_ID),
-        _provision_payload(),
+        _provision_payload(tier1_roles=["clinician"]),
     )
 
     row = mock_db.add.call_args.args[0]
@@ -164,6 +155,56 @@ def test_provision_user_identity_inserts_with_empty_roles():
     assert row.platform_roles == []
     assert row.changed_by_type == user_service.SERVICE_ACTOR_TYPE
     assert result["email"] == "ada@example.com"
+
+
+def test_provision_user_identity_bootstraps_first_operator():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+    mock_db.scalar.return_value = 0
+
+    result, created = user_service.provision_user_identity(
+        mock_db,
+        str(USER_ID),
+        _provision_payload(tier1_roles=["operator", "clinician"]),
+    )
+
+    row = mock_db.add.call_args.args[0]
+    assert created is True
+    assert row.platform_roles == ["operator.platform-admin"]
+    assert result["platform_roles"] == ["operator.platform-admin"]
+
+
+def test_provision_user_identity_skips_bootstrap_when_platform_admin_exists():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+    mock_db.scalar.return_value = 1
+
+    _, created = user_service.provision_user_identity(
+        mock_db,
+        str(USER_ID),
+        _provision_payload(tier1_roles=["operator"]),
+    )
+
+    row = mock_db.add.call_args.args[0]
+    assert created is True
+    assert row.platform_roles == []
+
+
+def test_provision_user_identity_creates_row_when_user_absent():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+    mock_db.scalar.return_value = 0
+
+    result, created = user_service.provision_user_identity(
+        mock_db,
+        str(USER_ID),
+        _provision_payload(tier1_roles=["operator"]),
+    )
+
+    row = mock_db.add.call_args.args[0]
+    assert created is True
+    assert row.platform_roles == ["operator.platform-admin"]
+    assert result["platform_roles"] == ["operator.platform-admin"]
 
 
 def test_provision_user_identity_updates_identity_only():

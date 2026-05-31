@@ -56,17 +56,7 @@
 
 Protected routes need a platform JWT from the authentication service (`operator` Tier-1 role plus `operator.platform-admin` for list/admin updates; Cedar governs per-user read/update). There is no public user create API. See `openapi.json` for paths.
 
-Authentication provisions registry rows with `PUT /api/v1/users/{uuid}` using a service token with `aud=user`. The route is idempotent: first login creates the row with empty `platform_roles`; later logins refresh identity fields and leave `platform_roles` unchanged.
-
-### Bootstrapping the first operator
-
-Because provisioning always creates rows with empty `platform_roles`, the very first operator cannot grant themselves `operator.platform-admin` through the API (Cedar denies list/admin-update without it). After that operator has logged in once (creating their row), an administrator with database access must seed the role directly, e.g.:
-
-```sql
-UPDATE users SET platform_roles = ARRAY['operator.platform-admin'] WHERE email = '<first-operator-email>';
-```
-
-Subsequent operators can then be granted roles through **Admin → Users** in the UI.
+Authentication provisions registry rows with `PUT /api/v1/users/{uuid}` using a service token with `aud=user`. The route is idempotent: first login creates the row; later logins refresh identity fields and leave `platform_roles` unchanged. When no active user holds `operator.platform-admin`, the first provisioned principal with Tier-1 `operator` receives that role automatically so Admin → Users works without a manual database seed.
 
 ## Full stack (compose)
 

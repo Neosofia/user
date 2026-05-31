@@ -325,6 +325,10 @@ def test_validate_provision_payload_branch_errors():
     ) == "tenant_uuid must be a UUID"
     assert user_routes._validate_provision_payload(USER, {**valid, "idp_id": ""}) == "idp_id is required"
     assert "email" in user_routes._validate_provision_payload(USER, {**valid, "email": 123})
+    assert user_routes._validate_provision_payload(USER, {**valid, "tier1_roles": ["operator"]}) is None
+    assert user_routes._validate_provision_payload(USER, {**valid, "tier1_roles": "operator"}) == (
+        "tier1_roles must be an array of strings"
+    )
 
 
 @patch("src.services.user_service.get_user_audits")
