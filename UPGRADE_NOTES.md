@@ -1,25 +1,24 @@
 # Upgrade notes — User service
 
-## user v0.5.0 (ADR-0014 tenant types and org roles)
+## user v0.4.0 (ADR-0014 tenant types and roles)
 
-Breaking API and schema changes. Deploy with **authentication v0.32.0+** so human tokens include `neosofia:tenant_type` and `neosofia:org_roles`.
+Deploy with **authentication v0.31.2+** so human tokens can include `neosofia:actors`, `neosofia:tenant_type`, and `neosofia:roles` (short Tier-2 names from the auth mirror).
 
 ### Database
 
-- Run Alembic through revision **002** (`platform_roles` → `org_roles`).
-- Deploy **authentication v0.32.0+** and run through **006** (`tenants.type`).
+- Greenfield: Alembic revision **001** creates `users.roles` (Tier-2 slugs `{tenant_type}.{role}`).
+- Upgrades from older `platform_roles` columns require a one-off migration in your environment before deploy (no revision `002` in this repo line).
 
 ### API
 
-- `platform_roles` is renamed to **`org_roles`** on user rows, audits, and PATCH bodies.
-- Registry slugs use **`{tenant_type}.{org_role}`** (e.g. `platform.admin`, `cro.clinical-ops`).
-- `GET /api/v1/roles` returns `org_roles`, `tenant_types`, and `assigner_prefixes`.
+- Registry and PATCH bodies use **`roles`** (array of full slugs, e.g. `platform.admin`, `cro.clinical-ops`).
+- `GET /api/v1/roles` returns `roles`, `tenant_types`, `assigner_actors`, and `assigner_actor_prefixes`.
 
 ### Authorization
 
-- Cedar policies use `tenantType`, `orgRoles`, and `isOperator`.
-- First Tier-1 operator bootstrap assigns **`platform.admin`**.
+- Cedar policies use `tenantType`, `roles` (short names on the principal), and `isOperator`.
+- First Tier-1 `operator` on provision bootstrap assigns **`platform.admin`**.
 
 ### CDP UI
 
-- User admin screens use **`org_roles`** from the user API and role catalog.
+- User admin screens use **`roles`** from the user API and role catalog.

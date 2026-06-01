@@ -2,7 +2,7 @@
 
 This service follows the [Neosofia Service Security Baseline](https://github.com/Neosofia/templates/blob/main/python/service/SECURITY.md), which defines the controls required of every platform web service. This document covers only deviations and concerns specific to the User Service.
 
-The User Service is the **Tier-2 source of truth** for **`org_roles`** on human principals (registry slugs `{tenant_type}.{org_role}`, e.g. `platform.admin`). **Tenant type** is owned by Authentication (`tenants.type`, JWT `neosofia:tenant_type`). Site, trial, and other domain scope live in downstream services—not in this registry. It validates platform JWTs but does **not** issue tokens or run the identity provider login flow.
+The User Service is the **Tier-2 source of truth** for **`roles[]`** on human principals (registry slugs `{tenant_type}.{role}`, e.g. `platform.admin`). **Tenant type** is owned by Authentication (`tenants.type`, JWT `neosofia:tenant_type`). Site, trial, and other domain scope live in downstream services—not in this registry. It validates platform JWTs but does **not** issue tokens or run the identity provider login flow.
 
 To report any security-related issue please email security@neosofia.tech — do not create a public issue.
 
@@ -13,8 +13,8 @@ To report any security-related issue please email security@neosofia.tech — do 
 | Concern | This service | Owner elsewhere |
 |---------|--------------|-----------------|
 | Login, MFA, WorkOS, JWT issuance | — | **Authentication** |
-| Tier-1 actor class on the JWT (`operator`, `clinician`, `patient`) | — | **Authentication** (JWT) |
-| Tier-2 org roles (`org_roles[]`) | **Source of truth** | — |
+| Tier-1 actor class on the JWT (`operator`, `clinician`, `patient`) | — | **Authentication** (`neosofia:actors`) |
+| Tier-2 roles (`roles[]`, full slugs) | **Source of truth** | — |
 | Tenant type (`platform`, `cro`, …) | — | **Authentication** |
 | Tenant display name / WorkOS org | — | **Authentication** `GET /api/v1/tenants/{uuid}` |
 | UI menu entitlements | — | **Capabilities** + CDP policy bundle |
@@ -27,7 +27,7 @@ To report any security-related issue please email security@neosofia.tech — do 
 | Boundary | Control |
 |----------|---------|
 | Caller identity | Platform JWT from **Authentication**; human `sub` equals `users.uuid`, service `sub` equals caller slug |
-| Tier-1 gate (list/admin update) | JWT must include Tier-1 role `operator` (`authentication-in-the-middle`) |
+| Tier-1 gate (list/admin update) | JWT must include Tier-1 actor `operator` (`authentication-in-the-middle`) |
 | Tier-2 gate (read/update/audits) | Cedar in `policies/policy.cedar` (`users` namespace), evaluated in-process via `authorization-in-the-middle` |
 | Cedar principal | Row loaded by JWT `sub` through `resolve_principal()`; no row → authorization path fails closed |
 | Internal provisioning | Service token with `sub=authentication`, `aud=user`, and `neosofia:token_type=service` |
@@ -42,13 +42,13 @@ Policy bundle: `policies/*.cedar` only (no Cedar schema file). Entity payloads a
 | Rule | Who | Action | Resource |
 |------|-----|--------|----------|
 | Self-service | Principal | `user:read`, `user:update` | Own `users::User` |
-| Platform admin | Tier-1 `operator` + JWT `tenant_type=platform` + org role `admin` | `user:read`, `user:update`, `user:list` | Same-tenant users / catalog |
+| Platform admin | Tier-1 `operator` + JWT `tenant_type=platform` + role `admin` | `user:read`, `user:update`, `user:list` | Same-tenant users / catalog |
 | Enterprise admin | Tier-1 `operator` + matching `tenant_type` + `admin` / `clinical-ops` / `systems` (see `policy.cedar`) | `user:read`, `user:update`, `user:list` | Same-tenant users / catalog |
 | Site admin | `tenant_type=site` + `admin` / `research` / `clinical` | `user:read`, `user:update`, `user:list` | Same-tenant users / catalog |
 | Role picklists | Any authenticated principal | `role_catalog:read` | `users::RoleCatalog` |
 | Login provisioning | `authentication` service token | `user:provision` | `users::UserProvisioning` |
 
-**Defense in depth:** Registry administration requires matching **tenant type**, **org roles** (from JWT `neosofia:org_roles` and/or this registry), and same **tenant** as the target row. Org role assignment is validated against `roles/*.json` for the assigner's Tier-1 session (`neosofia:session_roles` union). Self-service PATCH field allowlist remains in application code. See [ADR-0014](https://github.com/Neosofia/cdp/blob/main/architecture/adrs/0014-tenant-types-and-org-roles.md).
+**Defense in depth:** Registry administration requires matching **tenant type**, **roles** (from JWT `neosofia:roles` and/or this registry), and same **tenant** as the target row. Role assignment is validated against `roles/*.json` for the assigner's Tier-1 actors (`neosofia:actors` / `neosofia:session_actors`). Self-service PATCH field allowlist remains in application code. See [ADR-0014](https://github.com/Neosofia/cdp/blob/main/architecture/adrs/0014-tenant-types-and-org-roles.md).
 
 ---
 
@@ -59,7 +59,7 @@ This service **stores** name and email in PostgreSQL (needed for admin UI and pr
 | Data | In API / DB | In logs |
 |------|-------------|---------|
 | Name, email | Yes | **No** — use `user_uuid`, `actor_uuid`, `error_type` only |
-| `org_roles`, scope UUIDs | Yes | **No** |
+| `roles`, scope UUIDs | Yes | **No** |
 | `tenant_uuid`, `idp_id` | Yes | **No** |
 
 Row-level audit history is in `users_audit` (platform audit SQL); treat audit tables with the same log discipline.
@@ -84,16 +84,7 @@ Row-level audit history is in `users_audit` (platform audit SQL); treat audit ta
 | Item | Status | Notes |
 |------|--------|-------|
 | Public create API | By design | User rows are created only by the internal Authentication provisioning route; this service does not mint user ids |
-| List/admin update gate | By design | Cedar uses `tenantType`, `orgRoles`, and `tenantId` match (ADR-0014) |
+| List/admin update gate | By design | Cedar uses `tenantType`, `roles`, and `tenantId` match (ADR-0014) |
 | Principal must exist locally | By design | JWT valid but no user row → self/admin authorization is limited until login provisioning creates the row |
 | Rate limit storage in-memory | Accepted (baseline) | Set `RATELIMIT_STORAGE_URI` to Redis when running multiple replicas |
 | OpenAPI contract | In progress | Runtime validation is in route handlers; published `openapi.json` may lag full route surface |
-
----
-
-## References
-
-- Feature spec: `cdp/specs/018-user-service.md`
-- Role model: [authentication#11](https://github.com/Neosofia/authentication/issues/11)
-- [Constitution](https://github.com/Neosofia/cdp/blob/main/architecture/constitution.md)
-- [ADR-0008: Published JSON Schema contracts](https://github.com/Neosofia/cdp/blob/main/architecture/structurizr/decisions/0008-published-json-schema-contracts-for-api-testing.md)
