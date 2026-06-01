@@ -20,10 +20,15 @@ class User(Base, AuditColumnsMixin):
     )
     tenant_uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     idp_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    display_code: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Human-facing shorthand within the tenant (e.g. DET-4035)",
+    )
     first_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
-    platform_roles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
+    roles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
 
 
 class UserHistory(Base, HistoryColumnsMixin):
@@ -32,7 +37,8 @@ class UserHistory(Base, HistoryColumnsMixin):
     uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     tenant_uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     idp_id: Mapped[str] = mapped_column(Text, nullable=False)
+    display_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     first_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
-    platform_roles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
+    roles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")

@@ -1,9 +1,6 @@
 """
 Cedar entity builders and per-route entity sets for the user service.
 
-Stage 2: registry rows are provisioned outside this API (see README). Stage 3 will
-flip flow so authentication best-effort syncs into this service on login.
-
 This service authorizes user-registry operations:
 
 | Route | Action | Resource |
@@ -22,12 +19,11 @@ from flask import g
 from werkzeug.exceptions import NotFound
 
 from src.bootstrap.config import settings
+from src.domain.role_catalog import role_short_names
 
 NAMESPACE = "users"
 USER_CATALOG_ID = "user-catalog"
 ROLE_CATALOG_ID = "role-catalog"
-# Singleton Cedar resource id for the provision action. We authorize the
-# provisioning capability itself because the target user row may not exist yet.
 USER_PROVISIONING_ID = "user-provisioning"
 
 
@@ -53,8 +49,8 @@ def principal_sub() -> str:
 
 
 def principal_is_operator() -> bool:
-    """True when Cedar would set isOperator (Tier-1 operator on the JWT)."""
-    return "operator" in _jwt_tier1_roles(_claims())
+    """True when Cedar would set isOperator (operator actor on the JWT)."""
+    return "operator" in _jwt_active_actors(_claims())
 
 
 def principal_token_type() -> str:
@@ -70,64 +66,90 @@ def _claims() -> dict[str, Any]:
     return claims
 
 
-def _jwt_role_list(claims: dict[str, Any], claim_key: str) -> list[str]:
-    roles = claims.get(claim_key, [])
-    return roles if isinstance(roles, list) else []
+def _jwt_list(claims: dict[str, Any], claim_key: str) -> list[str]:
+    value = claims.get(claim_key, [])
+    return value if isinstance(value, list) else []
 
 
-def _jwt_tier1_roles(claims: dict[str, Any]) -> list[str]:
-    return _jwt_role_list(claims, _jwt_claim("roles"))
+def _jwt_active_actors(claims: dict[str, Any]) -> list[str]:
+    return _jwt_list(claims, _jwt_claim("actors"))
 
 
-def principal_tier1_roles() -> list[str]:
+def principal_actors() -> list[str]:
     """
-    Tier-1 roles for platform-role assignment.
+    Actor classes for role assignment.
 
-    Uses the full session list (``JWT_CLAIM_NAMESPACE:session_roles``) when the auth
-    middleware has narrowed the active-role claim to the UI selection.
+    Uses the full session list (``JWT_CLAIM_NAMESPACE:session_actors``) when the auth
+    middleware has narrowed the active actor to the UI selection.
     """
-    from src.domain.role_catalog import TIER1_ACTOR_CLASSES
+    from src.domain.role_catalog import ACTOR_CLASSES
 
     claims = _claims()
-    session_roles = _jwt_role_list(claims, _jwt_claim("session_roles"))
-    source = session_roles if session_roles else _jwt_tier1_roles(claims)
-    tier1: list[str] = []
+    session_actors = _jwt_list(claims, _jwt_claim("session_actors"))
+    source = session_actors if session_actors else _jwt_active_actors(claims)
+    actors: list[str] = []
     seen: set[str] = set()
-    for role in source:
-        if role in TIER1_ACTOR_CLASSES and role not in seen:
-            seen.add(role)
-            tier1.append(role)
-    return tier1
+    for actor in source:
+        if actor in ACTOR_CLASSES and actor not in seen:
+            seen.add(actor)
+            actors.append(actor)
+    return actors
+
+
+def tenant_type_for_row(row: dict[str, Any], claims: dict[str, Any] | None = None) -> str:
+    return _tenant_type(row, claims or _claims())
+
+
+def _tenant_type(row: dict[str, Any], claims: dict[str, Any]) -> str:
+    claim_type = claims.get(_jwt_claim("tenant_type"))
+    if claim_type:
+        return str(claim_type)
+    for slug in row.get("roles") or []:
+        if "." in slug:
+            return slug.split(".", 1)[0]
+    return "platform"
+
+
+def _roles_for_cedar(row: dict[str, Any], claims: dict[str, Any]) -> list[str]:
+    tenant_type = _tenant_type(row, claims)
+    jwt_roles = _jwt_list(claims, _jwt_claim("roles"))
+    if jwt_roles:
+        return role_short_names([str(role) for role in jwt_roles if str(role).strip()], tenant_type)
+    return role_short_names(list(row.get("roles") or []), tenant_type)
 
 
 def _user_attrs(row: dict[str, Any], claims: dict[str, Any]) -> dict[str, Any]:
-    platform_roles = list(row.get("platform_roles") or [])
-    jwt_roles = _jwt_tier1_roles(claims)
+    jwt_actors = _jwt_active_actors(claims)
+    tenant_type = _tenant_type(row, claims)
     return {
         "uuid": row["uuid"],
         "tenantId": row["tenant_uuid"],
+        "tenantType": tenant_type,
+        "roles": _roles_for_cedar(row, claims),
         "actorClass": "",
         "tokenType": principal_token_type(),
-        "isPlatformAdmin": "operator.platform-admin" in platform_roles,
-        "isOperator": "operator" in jwt_roles,
+        "isOperator": "operator" in jwt_actors,
     }
 
 
 def _principal_from_claims(claims: dict[str, Any]) -> dict[str, Any]:
     """Principal for callers authenticated but not yet registered in the user registry."""
     sub = str(claims["sub"])
-    jwt_roles = _jwt_tier1_roles(claims)
+    jwt_actors = _jwt_active_actors(claims)
     tenant_uuid = claims.get(_jwt_claim("tenant_uuid")) or ""
+    tenant_type = str(claims.get(_jwt_claim("tenant_type")) or "platform")
+    roles = role_short_names(_jwt_list(claims, _jwt_claim("roles")), tenant_type)
     return build_entity_payload(
         f"{NAMESPACE}::User",
         sub,
         {
             "uuid": sub,
             "tenantId": str(tenant_uuid),
-            "actorClass": "operator" if "operator" in jwt_roles else "",
+            "tenantType": tenant_type,
+            "roles": roles,
+            "actorClass": "operator" if "operator" in jwt_actors else "",
             "tokenType": principal_token_type(),
-            "isPlatformAdmin": False,
-            "isOperator": "operator" in jwt_roles,
+            "isOperator": "operator" in jwt_actors,
         },
     )
 
@@ -169,5 +191,3 @@ def build_role_catalog_entity() -> dict[str, Any]:
 
 def build_user_provisioning_entity() -> dict[str, Any]:
     return build_entity_payload(f"{NAMESPACE}::UserProvisioning", USER_PROVISIONING_ID, {})
-
-

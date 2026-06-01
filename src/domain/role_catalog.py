@@ -1,4 +1,4 @@
-"""File-backed platform role catalog with optional deploy-time overlay."""
+"""File-backed org role catalog with optional deploy-time overlay (ADR-0014)."""
 
 from __future__ import annotations
 
@@ -10,14 +10,18 @@ from typing import Any
 
 from src.bootstrap.config import settings
 
-TIER1_ACTOR_CLASSES: frozenset[str] = frozenset({"operator", "clinician", "patient"})
+ACTOR_CLASSES: frozenset[str] = frozenset({"operator", "clinician", "patient"})
 DEFAULT_ROLE_CATALOG_PATH = Path(__file__).resolve().parents[2] / "roles" / "default.json"
+VALID_TENANT_TYPES: frozenset[str] = frozenset(
+    {"platform", "cro", "sponsor", "site", "smo", "patient"}
+)
 
 
 @dataclass(frozen=True)
 class RoleCatalog:
-    platform_roles: frozenset[str]
-    assigner_prefixes: dict[str, tuple[str, ...]]
+    role_ids: frozenset[str]
+    tenant_types: dict[str, frozenset[str]]
+    assigner_actors: dict[str, tuple[str, ...]]
 
 
 def _role_id(value: object) -> str:
@@ -28,23 +32,54 @@ def _role_id(value: object) -> str:
     else:
         role_id = ""
     if not role_id or any(char.isspace() for char in role_id) or "." not in role_id:
-        raise ValueError(f"invalid platform role id: {value!r}")
+        raise ValueError(f"invalid org role id: {value!r}")
+    tenant_type, _, org_role = role_id.partition(".")
+    if tenant_type not in VALID_TENANT_TYPES or not org_role:
+        raise ValueError(f"invalid org role id: {value!r}")
     return role_id
 
 
-def _prefixes(value: object, tier1: str) -> tuple[str, ...]:
+def _prefixes(value: object, actor: str) -> tuple[str, ...]:
     if not isinstance(value, list):
-        raise ValueError(f"assigner_prefixes.{tier1} must be a list")
+        raise ValueError(f"assigner_actors.{actor} must be a list")
     prefixes: list[str] = []
     seen: set[str] = set()
     for raw in value:
         prefix = str(raw).strip()
         if not prefix or any(char.isspace() for char in prefix) or not prefix.endswith("."):
-            raise ValueError(f"invalid assigner prefix for {tier1}: {raw!r}")
+            raise ValueError(f"invalid assigner prefix for {actor}: {raw!r}")
+        tenant_type = prefix[:-1]
+        if tenant_type not in VALID_TENANT_TYPES:
+            raise ValueError(f"invalid assigner prefix for {actor}: {raw!r}")
         if prefix not in seen:
             seen.add(prefix)
             prefixes.append(prefix)
     return tuple(prefixes)
+
+
+def _tenant_types_from_mapping(data: dict[str, Any], source: Path) -> dict[str, frozenset[str]]:
+    raw = data.get("tenant_types")
+    if not isinstance(raw, dict):
+        raise ValueError(f"{source} must contain tenant_types object")
+    tenant_types: dict[str, frozenset[str]] = {}
+    for tenant_type, entry in raw.items():
+        key = str(tenant_type).strip()
+        if key not in VALID_TENANT_TYPES:
+            raise ValueError(f"unknown tenant type in {source}: {tenant_type!r}")
+        if not isinstance(entry, dict):
+            raise ValueError(f"tenant_types.{key} must be an object")
+        raw_roles = entry.get("roles")
+        if not isinstance(raw_roles, list):
+            raise ValueError(f"tenant_types.{key}.roles must be a list")
+        roles: list[str] = []
+        for raw_role in raw_roles:
+            short = str(raw_role).strip()
+            if not short:
+                raise ValueError(f"invalid org role for {key}: {raw_role!r}")
+            _role_id(f"{key}.{short}")
+            roles.append(short)
+        tenant_types[key] = frozenset(roles)
+    return tenant_types
 
 
 def _catalog_from_mapping(data: dict[str, Any], source: Path) -> RoleCatalog:
@@ -52,16 +87,17 @@ def _catalog_from_mapping(data: dict[str, Any], source: Path) -> RoleCatalog:
     if not isinstance(raw_roles, list):
         raise ValueError(f"{source} must contain a roles list")
     roles = frozenset(_role_id(role) for role in raw_roles)
+    tenant_types = _tenant_types_from_mapping(data, source)
 
-    raw_prefixes = data.get("assigner_prefixes", {})
+    raw_prefixes = data.get("assigner_actors", {})
     if not isinstance(raw_prefixes, dict):
-        raise ValueError(f"{source} assigner_prefixes must be an object")
+        raise ValueError(f"{source} assigner_actors must be an object")
     prefixes: dict[str, tuple[str, ...]] = {}
-    for tier1, raw_value in raw_prefixes.items():
-        tier1_key = str(tier1).strip()
-        validate_tier1_actor(tier1_key)
-        prefixes[tier1_key] = _prefixes(raw_value, tier1_key)
-    return RoleCatalog(platform_roles=roles, assigner_prefixes=prefixes)
+    for actor, raw_value in raw_prefixes.items():
+        actor_key = str(actor).strip()
+        validate_actor(actor_key)
+        prefixes[actor_key] = _prefixes(raw_value, actor_key)
+    return RoleCatalog(role_ids=roles, tenant_types=tenant_types, assigner_actors=prefixes)
 
 
 def load_catalog_file(path: Path) -> RoleCatalog:
@@ -75,17 +111,21 @@ def load_catalog_file(path: Path) -> RoleCatalog:
 def merge_catalogs(default: RoleCatalog, overlay: RoleCatalog | None) -> RoleCatalog:
     if overlay is None:
         return default
+    tenant_types = dict(default.tenant_types)
+    for tenant_type, roles in overlay.tenant_types.items():
+        tenant_types[tenant_type] = roles | tenant_types.get(tenant_type, frozenset())
     prefixes: dict[str, list[str]] = {
-        tier1: list(values) for tier1, values in default.assigner_prefixes.items()
+        actor: list(values) for actor, values in default.assigner_actors.items()
     }
-    for tier1, values in overlay.assigner_prefixes.items():
-        existing = prefixes.setdefault(tier1, [])
+    for actor, values in overlay.assigner_actors.items():
+        existing = prefixes.setdefault(actor, [])
         for prefix in values:
             if prefix not in existing:
                 existing.append(prefix)
     return RoleCatalog(
-        platform_roles=frozenset(default.platform_roles | overlay.platform_roles),
-        assigner_prefixes={tier1: tuple(values) for tier1, values in prefixes.items()},
+        role_ids=frozenset(default.role_ids | overlay.role_ids),
+        tenant_types=tenant_types,
+        assigner_actors={actor: tuple(values) for actor, values in prefixes.items()},
     )
 
 
@@ -97,69 +137,87 @@ def role_catalog() -> RoleCatalog:
     return merge_catalogs(default, overlay)
 
 
-def platform_role_ids() -> frozenset[str]:
-    return role_catalog().platform_roles
+def role_ids() -> frozenset[str]:
+    return role_catalog().role_ids
 
 
-def assigner_prefixes() -> dict[str, tuple[str, ...]]:
-    return role_catalog().assigner_prefixes
+def tenant_type_roles() -> dict[str, frozenset[str]]:
+    return role_catalog().tenant_types
 
 
-def platform_roles_for_tier1(tier1: str) -> frozenset[str]:
-    prefixes = assigner_prefixes().get(tier1, ())
+def assigner_actors() -> dict[str, tuple[str, ...]]:
+    return role_catalog().assigner_actors
+
+
+def roles_for_actor(actor: str) -> frozenset[str]:
+    prefixes = assigner_actors().get(actor, ())
     return frozenset(
-        role for role in platform_role_ids() if any(role.startswith(prefix) for prefix in prefixes)
+        role for role in role_ids() if any(role.startswith(prefix) for prefix in prefixes)
     )
 
 
-def assigner_tier1_roles_from_jwt(roles: list[str]) -> list[str]:
+def assigner_actors_from_jwt(roles: list[str]) -> list[str]:
     """Distinct Tier-1 roles from JWT, preserving claim order."""
-    tier1: list[str] = []
+    actor: list[str] = []
     seen: set[str] = set()
     for role in roles:
-        if role in TIER1_ACTOR_CLASSES and role not in seen:
+        if role in ACTOR_CLASSES and role not in seen:
             seen.add(role)
-            tier1.append(role)
-    if not tier1:
+            actor.append(role)
+    if not actor:
         raise ValueError(
             "JWT must include at least one Tier-1 role (operator, clinician, patient)"
         )
-    return tier1
+    return actor
 
 
-def platform_roles_for_tier1_roles(tier1_roles: list[str]) -> frozenset[str]:
+def roles_for_actors(actors: list[str]) -> frozenset[str]:
     allowed: set[str] = set()
-    for tier1 in assigner_tier1_roles_from_jwt(tier1_roles):
-        allowed.update(platform_roles_for_tier1(tier1))
+    for actor in assigner_actors_from_jwt(actors):
+        allowed.update(roles_for_actor(actor))
     return frozenset(allowed)
 
 
-def validate_tier1_actor(tier1: str) -> None:
-    if tier1 not in TIER1_ACTOR_CLASSES:
-        raise ValueError(f"tier1 role must be one of {sorted(TIER1_ACTOR_CLASSES)}")
+def validate_actor(actor: str) -> None:
+    if actor not in ACTOR_CLASSES:
+        raise ValueError(f"actor role must be one of {sorted(ACTOR_CLASSES)}")
 
 
-def validate_platform_roles(platform_roles: list[str]) -> None:
-    unknown = sorted(set(platform_roles) - platform_role_ids())
+def validate_roles(roles: list[str]) -> None:
+    unknown = sorted(set(roles) - role_ids())
     if unknown:
-        raise ValueError(f"unknown platform_roles: {unknown}")
+        raise ValueError(f"unknown roles: {unknown}")
 
 
-def validate_platform_roles_for_assigner(platform_roles: list[str], assigner_tier1: str) -> None:
-    validate_platform_roles_for_assigner_tiers(platform_roles, [assigner_tier1])
-
-
-def validate_platform_roles_for_assigner_tiers(
-    platform_roles: list[str],
-    assigner_tier1_roles: list[str],
+def validate_roles_for_assigner_actors(
+    roles: list[str],
+    assigner_actor_list: list[str],
 ) -> None:
-    tier1_roles = assigner_tier1_roles_from_jwt(assigner_tier1_roles)
-    validate_platform_roles(platform_roles)
-    allowed = platform_roles_for_tier1_roles(tier1_roles)
-    disallowed = sorted(set(platform_roles) - allowed)
+    actors = assigner_actors_from_jwt(assigner_actor_list)
+    validate_roles(roles)
+    allowed = roles_for_actors(actors)
+    disallowed = sorted(set(roles) - allowed)
     if disallowed:
-        namespaces = ", ".join(tier1_roles)
+        namespaces = ", ".join(actors)
         raise ValueError(
-            "platform_roles must use a namespace allowed by your Tier-1 JWT roles "
+            "roles must use a tenant type allowed by your Tier-1 JWT roles "
             f"({namespaces}); disallowed: {disallowed}"
         )
+
+
+def role_short_names(full_slugs: list[str], tenant_type: str) -> list[str]:
+    """Strip tenant-type prefix for Cedar roles / JWT neosofia:roles."""
+    prefix = f"{tenant_type}."
+    names: list[str] = []
+    seen: set[str] = set()
+    for slug in full_slugs:
+        if slug.startswith(prefix):
+            name = slug[len(prefix) :]
+        elif "." not in slug:
+            name = slug
+        else:
+            continue
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names

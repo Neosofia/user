@@ -23,7 +23,7 @@ def _user_row(**overrides) -> User:
         first_name="Sam",
         last_name="Operator",
         email="sam@example.com",
-        platform_roles=["operator.platform-admin"],
+        roles=["platform.admin"],
         change_type=1,
     )
     for key, value in overrides.items():
@@ -56,7 +56,7 @@ def test_get_user_or_404_returns_dict(mock_session_local):
     result = user_service.get_user_or_404(str(USER_ID))
 
     assert result["uuid"] == str(USER_ID)
-    assert result["platform_roles"] == ["operator.platform-admin"]
+    assert result["roles"] == ["platform.admin"]
 
 
 def test_list_users_without_search():
@@ -117,13 +117,13 @@ def test_update_user_operator_fields():
         str(USER_ID),
         {
             "tenant_uuid": str(new_tenant),
-            "platform_roles": ["staff.function.member"],
+            "roles": ["site.clinical"],
         },
         self_service=False,
     )
 
     assert row.tenant_uuid == new_tenant
-    assert row.platform_roles == ["staff.function.member"]
+    assert row.roles == ["site.clinical"]
 
 
 def _provision_payload(**overrides) -> dict:
@@ -146,13 +146,13 @@ def test_provision_user_identity_inserts_with_empty_roles():
     result, created = user_service.provision_user_identity(
         mock_db,
         str(USER_ID),
-        _provision_payload(tier1_roles=["clinician"]),
+        _provision_payload(actors=["clinician"]),
     )
 
     row = mock_db.add.call_args.args[0]
     assert created is True
     assert row.uuid == USER_ID
-    assert row.platform_roles == []
+    assert row.roles == []
     assert row.changed_by_type == user_service.SERVICE_ACTOR_TYPE
     assert result["email"] == "ada@example.com"
 
@@ -165,13 +165,13 @@ def test_provision_user_identity_bootstraps_first_operator():
     result, created = user_service.provision_user_identity(
         mock_db,
         str(USER_ID),
-        _provision_payload(tier1_roles=["operator", "clinician"]),
+        _provision_payload(actors=["operator", "clinician"]),
     )
 
     row = mock_db.add.call_args.args[0]
     assert created is True
-    assert row.platform_roles == ["operator.platform-admin"]
-    assert result["platform_roles"] == ["operator.platform-admin"]
+    assert row.roles == ["platform.admin"]
+    assert result["roles"] == ["platform.admin"]
 
 
 def test_provision_user_identity_skips_bootstrap_when_platform_admin_exists():
@@ -182,12 +182,12 @@ def test_provision_user_identity_skips_bootstrap_when_platform_admin_exists():
     _, created = user_service.provision_user_identity(
         mock_db,
         str(USER_ID),
-        _provision_payload(tier1_roles=["operator"]),
+        _provision_payload(actors=["operator"]),
     )
 
     row = mock_db.add.call_args.args[0]
     assert created is True
-    assert row.platform_roles == []
+    assert row.roles == []
 
 
 def test_provision_user_identity_creates_row_when_user_absent():
@@ -198,18 +198,18 @@ def test_provision_user_identity_creates_row_when_user_absent():
     result, created = user_service.provision_user_identity(
         mock_db,
         str(USER_ID),
-        _provision_payload(tier1_roles=["operator"]),
+        _provision_payload(actors=["operator"]),
     )
 
     row = mock_db.add.call_args.args[0]
     assert created is True
-    assert row.platform_roles == ["operator.platform-admin"]
-    assert result["platform_roles"] == ["operator.platform-admin"]
+    assert row.roles == ["platform.admin"]
+    assert result["roles"] == ["platform.admin"]
 
 
 def test_provision_user_identity_updates_identity_only():
     mock_db = MagicMock()
-    row = _user_row(platform_roles=["operator.platform-admin"])
+    row = _user_row(roles=["platform.admin"])
     mock_db.get.return_value = row
 
     result, created = user_service.provision_user_identity(
@@ -221,8 +221,8 @@ def test_provision_user_identity_updates_identity_only():
     assert created is False
     assert row.first_name == "Grace"
     assert row.email == "grace@example.com"
-    assert row.platform_roles == ["operator.platform-admin"]
-    assert result["platform_roles"] == ["operator.platform-admin"]
+    assert row.roles == ["platform.admin"]
+    assert result["roles"] == ["platform.admin"]
 
 
 def test_provision_user_identity_integrity_conflict():
@@ -288,10 +288,11 @@ def test_get_user_audits_returns_items():
             "uuid": USER_ID,
             "tenant_uuid": TENANT,
             "idp_id": "user_abc",
+            "display_code": "DET-4035",
             "first_name": "Sam",
             "last_name": "Operator",
             "email": "sam@example.com",
-            "platform_roles": ["operator.platform-admin"],
+            "roles": ["platform.admin"],
             "changed_at": changed_at,
             "changed_by_uuid": USER_ID,
             "changed_by_type": 1,

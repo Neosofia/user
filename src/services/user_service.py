@@ -16,7 +16,7 @@ class ConflictError(Exception):
 
 SYSTEM_ACTOR_UUID = _uuid.UUID("00000000-0000-7000-8000-000000000000")
 SERVICE_ACTOR_TYPE = 2
-PLATFORM_ADMIN_ROLE = "operator.platform-admin"
+PLATFORM_ADMIN_ROLE = "platform.admin"
 TIER1_OPERATOR_ROLE = "operator"
 
 
@@ -25,10 +25,11 @@ def _row_to_dict(row: User) -> dict:
         "uuid": str(row.uuid),
         "tenant_uuid": str(row.tenant_uuid),
         "idp_id": row.idp_id,
+        "display_code": row.display_code,
         "first_name": row.first_name,
         "last_name": row.last_name,
         "email": row.email,
-        "platform_roles": list(row.platform_roles or []),
+        "roles": list(row.roles or []),
     }
 
 
@@ -59,6 +60,7 @@ def list_users(db, page: int, page_size: int, search: str) -> tuple[list[dict], 
             | User.last_name.ilike(pattern)
             | User.email.ilike(pattern)
             | User.idp_id.ilike(pattern)
+            | User.display_code.ilike(pattern)
         )
 
     total = db.scalar(select(func.count()).select_from(query.subquery()))
@@ -81,10 +83,11 @@ def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_serv
     else:
         field_map = {
             "tenant_uuid": lambda v: _uuid.UUID(str(v)),
+            "display_code": lambda v: (str(v).strip() or None) if v is not None else None,
             "first_name": lambda v: (str(v).strip() or None) if v is not None else None,
             "last_name": lambda v: (str(v).strip() or None) if v is not None else None,
             "email": lambda v: (str(v).strip() or None) if v is not None else None,
-            "platform_roles": lambda v: list(v or []),
+            "roles": lambda v: list(v or []),
         }
         for field, transform in field_map.items():
             if field in payload:
@@ -101,8 +104,8 @@ def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_serv
     return _row_to_dict(row)
 
 
-def _tier1_roles(payload: dict) -> list[str]:
-    roles = payload.get("tier1_roles")
+def _actors(payload: dict) -> list[str]:
+    roles = payload.get("actors")
     if roles is None:
         return []
     if not isinstance(roles, list):
@@ -114,13 +117,13 @@ def _active_platform_admin_exists(db) -> bool:
     count = db.scalar(
         select(func.count())
         .select_from(User)
-        .where(User.platform_roles.contains([PLATFORM_ADMIN_ROLE]))
+        .where(User.roles.contains([PLATFORM_ADMIN_ROLE]))
     )
     return int(count or 0) > 0
 
 
 def _bootstrap_platform_admin_roles(db, payload: dict) -> list[str]:
-    if TIER1_OPERATOR_ROLE not in _tier1_roles(payload):
+    if TIER1_OPERATOR_ROLE not in _actors(payload):
         return []
     if _active_platform_admin_exists(db):
         return []
@@ -148,12 +151,12 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
     }
 
     if created:
-        platform_roles = _bootstrap_platform_admin_roles(db, payload)
-        if platform_roles:
+        roles = _bootstrap_platform_admin_roles(db, payload)
+        if roles:
             log_event("first_operator_bootstrapped")
         row = User(
             uuid=target_id,
-            platform_roles=platform_roles,
+            roles=roles,
             changed_by_uuid=SYSTEM_ACTOR_UUID,
             changed_by_type=SERVICE_ACTOR_TYPE,
             **values,
@@ -201,10 +204,11 @@ def get_user_audits(db, user_uuid: str, page: int, page_size: int) -> tuple[list
             "uuid": str(row["uuid"]),
             "tenant_uuid": str(row["tenant_uuid"]),
             "idp_id": row["idp_id"],
+            "display_code": row["display_code"],
             "first_name": row["first_name"],
             "last_name": row["last_name"],
             "email": row["email"],
-            "platform_roles": list(row["platform_roles"] or []),
+            "roles": list(row["roles"] or []),
             "changed_at": row["changed_at"].isoformat() if row["changed_at"] else None,
             "changed_by_uuid": str(row["changed_by_uuid"]),
             "changed_by_type": row["changed_by_type"],

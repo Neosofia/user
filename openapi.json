@@ -92,7 +92,7 @@
         },
         "responses": {
           "200": {
-            "description": "Existing row refreshed; platform_roles unchanged",
+            "description": "Existing row refreshed; roles unchanged",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/User" }
@@ -100,7 +100,7 @@
             }
           },
           "201": {
-            "description": "Registry row created; first Tier-1 operator receives operator.platform-admin when none exists",
+            "description": "Registry row created; first Tier-1 operator receives platform.admin when none exists",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/User" }
@@ -162,12 +162,13 @@
           },
           "tenant_uuid": { "type": "string", "format": "uuid" },
           "idp_id": { "type": "string" },
+          "display_code": { "type": "string", "nullable": true },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
           "email": { "type": "string", "nullable": true },
-          "platform_roles": { "type": "array", "items": { "type": "string" } }
+          "roles": { "type": "array", "items": { "type": "string" } }
         },
-        "required": ["uuid", "tenant_uuid", "idp_id", "platform_roles"]
+        "required": ["uuid", "tenant_uuid", "idp_id", "roles"]
       },
       "UserListResponse": {
         "type": "object",
@@ -183,10 +184,11 @@
         "type": "object",
         "properties": {
           "tenant_uuid": { "type": "string", "format": "uuid" },
+          "display_code": { "type": "string", "nullable": true },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
           "email": { "type": "string", "nullable": true },
-          "platform_roles": { "type": "array", "items": { "type": "string" } }
+          "roles": { "type": "array", "items": { "type": "string" } }
         },
         "additionalProperties": false
       },
@@ -195,13 +197,14 @@
         "properties": {
           "tenant_uuid": { "type": "string", "format": "uuid" },
           "idp_id": { "type": "string" },
+          "display_code": { "type": "string", "nullable": true },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
           "email": { "type": "string", "nullable": true },
-          "tier1_roles": {
+          "actors": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Tier-1 actor classes from Authentication (used to bootstrap the first operator.platform-admin)"
+            "description": "Tier-1 actor classes from Authentication (used to bootstrap the first platform.admin)"
           }
         },
         "required": ["tenant_uuid", "idp_id", "first_name", "last_name", "email"],
@@ -214,16 +217,17 @@
           "uuid": { "type": "string", "format": "uuid" },
           "tenant_uuid": { "type": "string", "format": "uuid" },
           "idp_id": { "type": "string" },
+          "display_code": { "type": "string", "nullable": true },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
           "email": { "type": "string", "nullable": true },
-          "platform_roles": { "type": "array", "items": { "type": "string" } },
+          "roles": { "type": "array", "items": { "type": "string" } },
           "changed_at": { "type": "string", "format": "date-time" },
           "changed_by_uuid": { "type": "string", "format": "uuid" },
           "changed_by_type": { "type": "integer" },
           "change_type": { "type": "integer" }
         },
-        "required": ["uuid", "tenant_uuid", "idp_id", "platform_roles", "changed_at", "changed_by_uuid", "changed_by_type", "change_type"]
+        "required": ["uuid", "tenant_uuid", "idp_id", "roles", "changed_at", "changed_by_uuid", "changed_by_type", "change_type"]
       },
       "UserAuditListResponse": {
         "type": "object",
@@ -244,13 +248,13 @@
             "items": { "type": "string" },
             "description": "Tier-1 JWT roles (operator, clinician, patient); not stored on user rows"
           },
-          "platform_roles": { "type": "array", "items": { "type": "string" } },
-          "assigner_tier1_roles": {
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "assigner_actors": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Tier-1 roles from the JWT used to filter assignable platform_roles"
+            "description": "Tier-1 roles from the JWT used to filter assignable roles"
           },
-          "assigner_prefixes": {
+          "assigner_actor_prefixes": {
             "type": "object",
             "additionalProperties": {
               "type": "array",
@@ -259,7 +263,7 @@
             "description": "Catalog prefixes registered for the assigner's Tier-1 roles"
           }
         },
-        "required": ["actor_classes", "platform_roles", "assigner_tier1_roles"]
+        "required": ["actor_classes", "roles", "assigner_actors"]
       },
       "ErrorResponse": {
         "type": "object",

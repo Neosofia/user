@@ -1,4 +1,4 @@
-"""001 users
+"""001 users registry
 
 Revision ID: 001
 Revises: 000
@@ -25,12 +25,25 @@ def upgrade() -> None:
         ),
         sa.Column("tenant_uuid", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("idp_id", sa.Text(), nullable=False),
+        sa.Column(
+            "display_code",
+            sa.Text(),
+            nullable=True,
+            comment="Human-facing shorthand",
+        ),
         sa.Column("first_name", sa.Text(), nullable=True),
         sa.Column("last_name", sa.Text(), nullable=True),
         sa.Column("email", sa.Text(), nullable=True),
-        sa.Column("platform_roles", postgresql.ARRAY(sa.Text()), nullable=False, server_default="{}"),
+        sa.Column(
+            "roles",
+            postgresql.ARRAY(sa.Text()),
+            nullable=False,
+            server_default="{}",
+            comment="Tier-2 role slugs: {tenant_type}.{role} (e.g. platform.admin)",
+        ),
         sa.PrimaryKeyConstraint("uuid"),
         sa.UniqueConstraint("idp_id"),
+        sa.UniqueConstraint("tenant_uuid", "display_code", name="uq_users_tenant_display_code"),
     )
     op.create_index("ix_users_tenant_uuid", "users", ["tenant_uuid"])
 

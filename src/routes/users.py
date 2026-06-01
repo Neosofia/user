@@ -10,7 +10,7 @@ from src.bootstrap.capabilities import Capabilities
 from src.bootstrap.config import settings
 from src.bootstrap.logging_config import log_event
 from src.db.engine import SessionLocal
-from src.domain.role_catalog import validate_platform_roles_for_assigner_tiers
+from src.domain.role_catalog import validate_roles_for_assigner_actors
 from src.services import user_service
 
 bp = Blueprint("users", __name__, url_prefix="/api/v1/users")
@@ -25,7 +25,7 @@ _UNSUPPORTED_SCOPE_FIELDS = frozenset({
     "authorized_study_ids",
 })
 _PROVISION_FIELDS = frozenset({"tenant_uuid", "idp_id", "first_name", "last_name", "email"})
-_PROVISION_OPTIONAL_FIELDS = frozenset({"tier1_roles"})
+_PROVISION_OPTIONAL_FIELDS = frozenset({"actors", "display_code"})
 
 
 def _parse_pagination() -> tuple[int, int] | tuple[None, tuple]:
@@ -60,7 +60,12 @@ def _reject_unsupported_scope_fields(data: dict) -> str | None:
     return None
 
 
-def _validate_update_payload(data: dict, *, self_service: bool) -> str | None:
+def _validate_update_payload(
+    data: dict,
+    *,
+    self_service: bool,
+    target: dict | None = None,
+) -> str | None:
     if not data:
         return "empty body"
     message = _reject_immutable_fields(data)
@@ -77,11 +82,14 @@ def _validate_update_payload(data: dict, *, self_service: bool) -> str | None:
                 f"remove: {sorted(extra)}"
             )
         return None
-    if "platform_roles" in data:
+    if "roles" in data:
+        if target is None:
+            return "user not found"
         try:
-            validate_platform_roles_for_assigner_tiers(
-                list(data["platform_roles"] or []),
-                auth_entities.principal_tier1_roles(),
+            roles = list(data["roles"] or [])
+            validate_roles_for_assigner_actors(
+                roles,
+                auth_entities.principal_actors(),
             )
         except ValueError as exc:
             return str(exc)
@@ -90,6 +98,10 @@ def _validate_update_payload(data: dict, *, self_service: bool) -> str | None:
             _uuid.UUID(str(data["tenant_uuid"]))
         except ValueError:
             return "tenant_uuid must be a UUID"
+    if "display_code" in data:
+        value = data.get("display_code")
+        if value is not None and not isinstance(value, str):
+            return "display_code must be a string or null"
     return None
 
 
@@ -112,11 +124,11 @@ def _validate_provision_payload(user_id: str, data: dict) -> str | None:
         return "tenant_uuid must be a UUID"
     if not str(data.get("idp_id") or "").strip():
         return "idp_id is required"
-    tier1_roles = data.get("tier1_roles")
-    if tier1_roles is not None:
-        if not isinstance(tier1_roles, list) or any(not isinstance(role, str) for role in tier1_roles):
-            return "tier1_roles must be an array of strings"
-    for field in ("first_name", "last_name", "email"):
+    actors = data.get("actors")
+    if actors is not None:
+        if not isinstance(actors, list) or any(not isinstance(role, str) for role in actors):
+            return "actors must be an array of strings"
+    for field in ("first_name", "last_name", "email", "display_code"):
         value = data.get(field)
         if value is not None and not isinstance(value, str):
             return f"{field} must be a string or null"
@@ -169,8 +181,14 @@ def patch_user(user_id: str):
     self_service = (
         auth_entities.principal_sub() == user_id and not auth_entities.principal_is_operator()
     )
+    target = None
+    if not self_service and "roles" in data:
+        try:
+            target = user_service.get_user_or_404(user_id)
+        except NotFound:
+            return jsonify({"error": "not_found"}), 404
     try:
-        message = _validate_update_payload(data, self_service=self_service)
+        message = _validate_update_payload(data, self_service=self_service, target=target)
     except ValueError as exc:
         return jsonify({"error": "invalid_request", "message": str(exc)}), 400
     if message:
