@@ -26,6 +26,8 @@ _UNSUPPORTED_SCOPE_FIELDS = frozenset({
 })
 _PROVISION_FIELDS = frozenset({"tenant_uuid", "idp_id", "first_name", "last_name", "email"})
 _PROVISION_OPTIONAL_FIELDS = frozenset({"actors", "display_code"})
+_CREATE_REQUIRED_FIELDS = frozenset({"first_name", "last_name", "email"})
+_CREATE_OPTIONAL_FIELDS = frozenset({"display_code", "tenant_uuid", "roles", "uuid", "idp_id"})
 
 
 def _parse_pagination() -> tuple[int, int] | tuple[None, tuple]:
@@ -105,6 +107,57 @@ def _validate_update_payload(
     return None
 
 
+def _validate_create_payload(data: dict) -> str | None:
+    if not isinstance(data, dict) or not data:
+        return "body must be a JSON object"
+    missing = sorted(_CREATE_REQUIRED_FIELDS - data.keys())
+    if missing:
+        return f"missing required fields: {missing}"
+    extra = sorted(set(data.keys()) - _CREATE_REQUIRED_FIELDS - _CREATE_OPTIONAL_FIELDS)
+    if extra:
+        return f"unsupported fields: {extra}"
+    message = _reject_unsupported_scope_fields(data)
+    if message:
+        return message
+    if "tenant_uuid" in data:
+        try:
+            _uuid.UUID(str(data["tenant_uuid"]))
+        except ValueError:
+            return "tenant_uuid must be a UUID"
+    if "uuid" in data:
+        try:
+            _uuid.UUID(str(data["uuid"]))
+        except ValueError:
+            return "uuid must be a UUID"
+    roles = data.get("roles")
+    if roles is not None:
+        if not isinstance(roles, list) or any(not isinstance(role, str) for role in roles):
+            return "roles must be an array of strings"
+    for field in ("first_name", "last_name", "email", "display_code", "idp_id"):
+        value = data.get(field)
+        if value is not None and not isinstance(value, str):
+            return f"{field} must be a string or null"
+    return None
+
+
+def _resolve_create_tenant(data: dict) -> tuple[str | None, str | None]:
+    actor_tenant = auth_entities.principal_tenant_uuid()
+    requested = data.get("tenant_uuid")
+    if requested:
+        try:
+            tenant_uuid = str(_uuid.UUID(str(requested)))
+        except ValueError:
+            return None, "tenant_uuid must be a UUID"
+    elif actor_tenant:
+        tenant_uuid = actor_tenant
+    else:
+        return None, "tenant_uuid is required"
+
+    if actor_tenant and tenant_uuid != actor_tenant:
+        return None, "tenant_uuid must match your tenant"
+    return tenant_uuid, None
+
+
 def _validate_provision_payload(user_id: str, data: dict) -> str | None:
     try:
         _uuid.UUID(str(user_id))
@@ -165,6 +218,38 @@ def list_users():
             return jsonify({"items": items, "total": total, "page": page, "page_size": page_size}), 200
     except Exception as exc:
         log_event("list_users_failed", error_type=type(exc).__name__)
+        return jsonify({"error": "database error"}), 500
+
+
+@bp.route("", methods=["POST"])
+@with_security(action=Capabilities.USER_CREATE, rate_limit=settings.user_write_rate_limit)
+def create_user():
+    data = request.get_json(silent=True) or {}
+    message = _validate_create_payload(data)
+    if message:
+        return jsonify({"error": "invalid_request", "message": message}), 400
+
+    tenant_uuid, tenant_error = _resolve_create_tenant(data)
+    if tenant_error:
+        return jsonify({"error": "invalid_request", "message": tenant_error}), 400
+
+    payload = {**data, "tenant_uuid": tenant_uuid}
+    actor = auth_entities.principal_sub()
+    try:
+        with SessionLocal() as db:
+            item, created = user_service.create_user(
+                db,
+                actor,
+                payload,
+                assigner_actor_list=auth_entities.principal_actors(),
+            )
+            return jsonify(item), 201 if created else 200
+    except ValueError as exc:
+        return jsonify({"error": "invalid_request", "message": str(exc)}), 400
+    except user_service.ConflictError:
+        return jsonify({"error": "conflict", "message": "user create conflict"}), 409
+    except Exception as exc:
+        log_event("create_user_failed", error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
 
 

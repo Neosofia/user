@@ -7,6 +7,7 @@ This service authorizes user-registry operations:
 |-------|--------|----------|
 | GET/PATCH /api/v1/users/{user_id} | user:read, user:update | users::User (target row) |
 | GET /api/v1/users | user:list | users::UserCatalog |
+| POST /api/v1/users | user:create | users::UserCatalog |
 | GET /api/v1/roles | role_catalog:read | users::RoleCatalog |
 | PUT /api/v1/users/{user_id} | user:provision | users::UserProvisioning |
 """
@@ -51,6 +52,22 @@ def principal_sub() -> str:
 def principal_is_operator() -> bool:
     """True when Cedar would set isOperator (operator actor on the JWT)."""
     return "operator" in _jwt_active_actors(_claims())
+
+
+def principal_tenant_uuid() -> str | None:
+    """Tenant UUID for the authenticated principal (JWT claim or registry row)."""
+    claims = _claims()
+    claim_tenant = claims.get(_jwt_claim("tenant_uuid"))
+    if claim_tenant:
+        return str(claim_tenant)
+    if principal_token_type() == "service":
+        return None
+    from src.services import user_service
+
+    try:
+        return user_service.get_user_or_404(principal_sub())["tenant_uuid"]
+    except NotFound:
+        return None
 
 
 def principal_token_type() -> str:
@@ -129,6 +146,7 @@ def _user_attrs(row: dict[str, Any], claims: dict[str, Any]) -> dict[str, Any]:
         "actorClass": "",
         "tokenType": principal_token_type(),
         "isOperator": "operator" in jwt_actors,
+        "isClinician": "clinician" in jwt_actors,
     }
 
 
@@ -150,6 +168,7 @@ def _principal_from_claims(claims: dict[str, Any]) -> dict[str, Any]:
             "actorClass": "operator" if "operator" in jwt_actors else "",
             "tokenType": principal_token_type(),
             "isOperator": "operator" in jwt_actors,
+            "isClinician": "clinician" in jwt_actors,
         },
     )
 

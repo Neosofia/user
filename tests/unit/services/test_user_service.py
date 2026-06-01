@@ -13,6 +13,7 @@ pytestmark = pytest.mark.unit
 
 TENANT = uuid.UUID("00000000-0000-7000-8000-000000000001")
 USER_ID = uuid.UUID("00000000-0000-7000-8000-000000000002")
+OTHER_USER_ID = uuid.UUID("00000000-0000-7000-8000-000000000003")
 
 
 def _user_row(**overrides) -> User:
@@ -305,3 +306,138 @@ def test_get_user_audits_returns_items():
     assert total == 1
     assert items[0]["changed_at"] == changed_at.isoformat()
     assert items[0]["change_type"] == 2
+
+
+def test_create_user_defaults_patient_role_for_clinician():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "display_code": "PAT-9001",
+    }
+
+    result, created = user_service.create_user(
+        mock_db,
+        str(USER_ID),
+        payload,
+        assigner_actor_list=["clinician"],
+    )
+
+    assert created is True
+    assert result["roles"] == ["patient.self"]
+    assert result["display_code"] == "PAT-9001"
+    mock_db.add.assert_called_once()
+    mock_db.commit.assert_called_once()
+
+
+def test_create_user_rejects_non_patient_roles_for_clinician():
+    mock_db = MagicMock()
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "roles": ["site.clinical"],
+    }
+
+    with pytest.raises(ValueError, match="patient.self"):
+        user_service.create_user(
+            mock_db,
+            str(USER_ID),
+            payload,
+            assigner_actor_list=["clinician"],
+        )
+
+
+def test_create_user_clinician_enrollment_skips_assigner_catalog():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "roles": ["patient.self"],
+    }
+
+    result, created = user_service.create_user(
+        mock_db,
+        str(USER_ID),
+        payload,
+        assigner_actor_list=["clinician"],
+    )
+
+    assert created is True
+    assert result["roles"] == ["patient.self"]
+
+
+def test_create_user_upserts_when_uuid_provided():
+    mock_db = MagicMock()
+    existing = MagicMock()
+    mock_db.get.return_value = existing
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "uuid": str(OTHER_USER_ID),
+        "idp_id": "demo_patient_pat_9001",
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "display_code": "PAT-9001",
+        "roles": ["patient.self"],
+    }
+
+    with patch.object(user_service, "_row_to_dict", return_value={"uuid": str(OTHER_USER_ID)}):
+        result, created = user_service.create_user(
+            mock_db,
+            str(USER_ID),
+            payload,
+            assigner_actor_list=["operator"],
+        )
+
+    assert created is False
+    assert result["uuid"] == str(OTHER_USER_ID)
+    mock_db.add.assert_not_called()
+    mock_db.commit.assert_called_once()
+
+
+def test_create_user_rejects_uuid_for_clinician():
+    mock_db = MagicMock()
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "uuid": str(OTHER_USER_ID),
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "roles": ["patient.self"],
+    }
+
+    with pytest.raises(ValueError, match="uuid or idp_id"):
+        user_service.create_user(
+            mock_db,
+            str(USER_ID),
+            payload,
+            assigner_actor_list=["clinician"],
+        )
+
+
+def test_create_user_rejects_non_patient_roles_for_stable_uuid_seeding():
+    mock_db = MagicMock()
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "uuid": str(OTHER_USER_ID),
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "roles": ["site.clinical"],
+    }
+
+    with pytest.raises(ValueError, match="stable uuid seeding"):
+        user_service.create_user(
+            mock_db,
+            str(USER_ID),
+            payload,
+            assigner_actor_list=["operator"],
+        )

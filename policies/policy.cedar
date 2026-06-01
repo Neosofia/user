@@ -124,6 +124,42 @@ permit (
     principal.tenantId == resource.tenantId
 };
 
+// Clinician Tier-1 — supervised patient roster (CDP demo + care workflows)
+permit (
+    principal is users::User,
+    action == Action::"user:list",
+    resource is users::UserCatalog
+) when {
+    principal.isClinician
+};
+
+permit (
+    principal is users::User,
+    action == Action::"user:read",
+    resource is users::User
+) when {
+    principal.isClinician &&
+    principal.tenantId == resource.tenantId
+};
+
+permit (
+    principal is users::User,
+    action == Action::"user:create",
+    resource is users::UserCatalog
+) when {
+    principal.isClinician
+};
+
+permit (
+    principal is users::User,
+    action == Action::"user:create",
+    resource is users::UserCatalog
+) when {
+    principal.isOperator &&
+    principal.tenantType == "platform" &&
+    principal.roles.contains("admin")
+};
+
 // Site — clinician Tier-1 + site tenant type
 permit (
     principal is users::User,

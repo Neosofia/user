@@ -18,6 +18,7 @@ SYSTEM_ACTOR_UUID = _uuid.UUID("00000000-0000-7000-8000-000000000000")
 SERVICE_ACTOR_TYPE = 2
 PLATFORM_ADMIN_ROLE = "platform.admin"
 TIER1_OPERATOR_ROLE = "operator"
+PATIENT_SELF_ROLE = "patient.self"
 
 
 def _row_to_dict(row: User) -> dict:
@@ -174,6 +175,91 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
         db.rollback()
         raise ConflictError("user provisioning conflict") from exc
     db.refresh(row)
+    return _row_to_dict(row), created
+
+
+def create_user(db, actor_uuid: str, payload: dict, *, assigner_actor_list: list[str]) -> tuple[dict, bool]:
+    from src.domain.role_catalog import validate_roles_for_assigner_actors
+
+    actor_id = _uuid.UUID(str(actor_uuid))
+    tenant_id = _uuid.UUID(str(payload["tenant_uuid"]))
+
+    roles = list(payload.get("roles") or [])
+    actors = [actor for actor in assigner_actor_list if actor in {"operator", "clinician", "patient"}]
+    clinician_only = actors == ["clinician"]
+    if not roles:
+        if clinician_only:
+            roles = [PATIENT_SELF_ROLE]
+        else:
+            raise ValueError("roles is required")
+
+    if clinician_only:
+        if set(roles) != {PATIENT_SELF_ROLE}:
+            raise ValueError("clinician enrollment may only assign patient.self to the new patient")
+        if payload.get("uuid") or payload.get("idp_id"):
+            raise ValueError("clinician enrollment may not specify uuid or idp_id")
+    elif payload.get("uuid"):
+        if set(roles) != {PATIENT_SELF_ROLE}:
+            raise ValueError("stable uuid seeding may only assign patient.self")
+    else:
+        validate_roles_for_assigner_actors(roles, assigner_actor_list)
+
+    first_name = str(payload["first_name"]).strip()
+    last_name = str(payload["last_name"]).strip()
+    email = str(payload["email"]).strip()
+    if not first_name or not last_name or not email:
+        raise ValueError("first_name, last_name, and email are required")
+
+    display_code = payload.get("display_code")
+    if display_code is not None:
+        display_code = str(display_code).strip() or None
+
+    if payload.get("uuid"):
+        user_uuid = _uuid.UUID(str(payload["uuid"]))
+    else:
+        user_uuid = _uuid.uuid7()
+
+    if payload.get("idp_id"):
+        idp_id = str(payload["idp_id"]).strip()
+        if not idp_id:
+            raise ValueError("idp_id must not be empty")
+    else:
+        idp_id = f"enrolled_{user_uuid}"
+
+    row = db.get(User, user_uuid)
+    created = row is None
+    if row is None:
+        row = User(
+            uuid=user_uuid,
+            tenant_uuid=tenant_id,
+            idp_id=idp_id,
+            display_code=display_code,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            roles=roles,
+            changed_by_uuid=actor_id,
+            changed_by_type=1,
+        )
+        db.add(row)
+    else:
+        row.tenant_uuid = tenant_id
+        row.idp_id = idp_id
+        row.display_code = display_code
+        row.first_name = first_name
+        row.last_name = last_name
+        row.email = email
+        row.roles = roles
+        row.changed_by_uuid = actor_id
+        row.changed_by_type = 1
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError("user create conflict") from exc
+    db.refresh(row)
+    log_event("user_created", actor_uuid=actor_uuid, user_uuid=str(user_uuid), created=created)
     return _row_to_dict(row), created
 
 

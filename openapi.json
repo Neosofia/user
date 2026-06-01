@@ -35,6 +35,35 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Create a registry user (e.g. patient enrollment)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing user updated (uuid upsert)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          },
+          "201": {
+            "description": "User created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/users/{user_id}": {
@@ -190,6 +219,36 @@
           "email": { "type": "string", "nullable": true },
           "roles": { "type": "array", "items": { "type": "string" } }
         },
+        "additionalProperties": false
+      },
+      "UserCreateRequest": {
+        "type": "object",
+        "properties": {
+          "tenant_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Defaults to the caller tenant when omitted"
+          },
+          "display_code": { "type": "string", "nullable": true },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional stable user id; upserts when the row already exists (operator seeding only)"
+          },
+          "idp_id": {
+            "type": "string",
+            "description": "Optional identity provider subject; defaults to enrolled_{uuid} when omitted"
+          },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "roles": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Defaults to patient.self for clinician enrollment"
+          }
+        },
+        "required": ["first_name", "last_name", "email"],
         "additionalProperties": false
       },
       "UserProvisionRequest": {
