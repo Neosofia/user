@@ -1,5 +1,5 @@
 // User registry authorization (ADR-0014). Cedar is the source of truth.
-// Principal/resource: tenantType, tenantId, roles on users::User; Tier-1 isOperator on JWT.
+// Principal/resource: tenantType, tenantId, roles on users::User; Tier-1 isOperator / isStudy on JWT.
 
 // Self-service profile
 permit (
@@ -54,13 +54,13 @@ permit (
     principal.tenantId == resource.tenantId
 };
 
-// CRO / sponsor / SMO — operator Tier-1 + matching tenant type + admin or clinical-ops or systems
+// CRO / sponsor / SMO — study Tier-1 + matching tenant type + admin or clinical-ops or systems
 permit (
     principal is users::User,
     action == Action::"user:list",
     resource is users::UserCatalog
 ) when {
-    principal.isOperator &&
+    principal.isStudy &&
     (principal.tenantType == "cro" || principal.tenantType == "sponsor" || principal.tenantType == "smo") &&
     (
         principal.roles.contains("admin") ||
@@ -74,7 +74,7 @@ permit (
     action in [Action::"user:read", Action::"user:update"],
     resource is users::User
 ) when {
-    principal.isOperator &&
+    principal.isStudy &&
     (principal.tenantType == "cro" || principal.tenantType == "sponsor" || principal.tenantType == "smo") &&
     (
         principal.roles.contains("admin") ||
@@ -90,7 +90,7 @@ permit (
     action in [Action::"user:list", Action::"user:read"],
     resource is users::UserCatalog
 ) when {
-    principal.isOperator &&
+    principal.isStudy &&
     principal.tenantType == "sponsor" &&
     principal.roles.contains("oversight")
 };
@@ -100,7 +100,7 @@ permit (
     action == Action::"user:read",
     resource is users::User
 ) when {
-    principal.isOperator &&
+    principal.isStudy &&
     principal.tenantType == "sponsor" &&
     principal.roles.contains("oversight") &&
     principal.tenantId == resource.tenantId

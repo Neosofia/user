@@ -4,12 +4,14 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from authentication_in_the_middle.actors import configure_tier1_actor_classes
 from authorization_in_the_middle import CedarEvaluator, FilesystemPolicySetSource
 from src.bootstrap.config import settings
 from src.bootstrap.extensions import limiter, talisman
 from src.bootstrap.logging_config import log_event, setup_logging
 from src.routes import health
 from src.routes.roles import bp as roles_bp
+from src.domain.role_catalog import init_actor_classes
 from src.routes.users import init_user_routes
 
 
@@ -30,6 +32,11 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     app.config.setdefault("SERVICE_NAME", settings.service_name)
     if hasattr(settings, "jwt_jwks_uri"):
         app.config.setdefault("JWT_JWKS_URI", settings.jwt_jwks_uri)
+    app.config.setdefault("ENV", settings.env)
+    configure_tier1_actor_classes(app)
+    tier1 = app.config.get("TIER1_ACTOR_CLASSES")
+    if tier1:
+        init_actor_classes(tier1)
 
     is_dev = settings.env.lower() in ("development", "test")
     if not is_dev and settings.trusted_proxy_hops > 0:

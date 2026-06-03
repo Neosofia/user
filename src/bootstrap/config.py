@@ -44,7 +44,6 @@ class Settings(BaseSettings):
         default="neosofia",
         description="Prefix for custom JWT claims (must match Authentication JWT_CLAIM_NAMESPACE)",
     )
-
     # Rate limit settings
     rate_limit_storage_uri: str = "memory://"
     health_rate_limit: str = "600 per minute"

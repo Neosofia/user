@@ -43,7 +43,8 @@
     "patient.advocate"
   ],
   "assigner_actors": {
-    "operator": ["platform.", "cro.", "sponsor.", "smo."],
+    "operator": ["platform."],
+    "study": ["cro.", "sponsor.", "smo."],
     "clinician": ["site."],
     "patient": ["patient."]
   }

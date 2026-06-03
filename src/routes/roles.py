@@ -5,8 +5,9 @@ from src.authorization import entities as auth_entities
 from src.bootstrap.capabilities import Capabilities
 from src.bootstrap.config import settings
 from src.domain.role_catalog import (
-    ACTOR_CLASSES,
+    actor_classes,
     assigner_actors,
+    role_definition,
     roles_for_actors,
     tenant_type_roles,
 )
@@ -21,12 +22,13 @@ def list_roles():
     if not actors:
         return jsonify({
             "error": "invalid_request",
-            "message": "JWT must include at least one Tier-1 role (operator, clinician, patient)",
+            "message": "JWT must include at least one Tier-1 role (operator, study, clinician, patient)",
         }), 400
     roles = sorted(roles_for_actors(actors))
     return jsonify({
-        "actor_classes": sorted(ACTOR_CLASSES),
+        "actor_classes": sorted(actor_classes()),
         "roles": roles,
+        "role_definitions": [role_definition(role_id) for role_id in roles],
         "tenant_types": {
             tenant_type: sorted(roles)
             for tenant_type, roles in sorted(tenant_type_roles().items())
@@ -34,7 +36,6 @@ def list_roles():
         "assigner_actor_prefixes": {
             actor: list(prefixes)
             for actor, prefixes in sorted(assigner_actors().items())
-            if actor in actors
         },
         "assigner_actors": actors,
     }), 200

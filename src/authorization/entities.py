@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from authorization_in_the_middle.entities import build_entity_payload
-from flask import g
+from flask import g, request
 from werkzeug.exceptions import NotFound
 
 from src.bootstrap.config import settings
@@ -99,15 +99,16 @@ def principal_actors() -> list[str]:
     Uses the full session list (``JWT_CLAIM_NAMESPACE:session_actors``) when the auth
     middleware has narrowed the active actor to the UI selection.
     """
-    from src.domain.role_catalog import ACTOR_CLASSES
+    from src.domain.role_catalog import actor_classes
 
     claims = _claims()
     session_actors = _jwt_list(claims, _jwt_claim("session_actors"))
     source = session_actors if session_actors else _jwt_active_actors(claims)
+    allowed = actor_classes()
     actors: list[str] = []
     seen: set[str] = set()
     for actor in source:
-        if actor in ACTOR_CLASSES and actor not in seen:
+        if actor in allowed and actor not in seen:
             seen.add(actor)
             actors.append(actor)
     return actors
@@ -117,7 +118,42 @@ def tenant_type_for_row(row: dict[str, Any], claims: dict[str, Any] | None = Non
     return _tenant_type(row, claims or _claims())
 
 
+_STUDY_TENANT_TYPES = frozenset({"cro", "sponsor", "smo"})
+
+
+def _active_org_role_slug() -> str | None:
+    slug = (request.headers.get("X-Active-Org-Role") or "").strip()
+    if slug and "." in slug:
+        return slug
+    return None
+
+
+def _study_authorization_context(
+    row: dict[str, Any],
+    jwt_actors: list[str],
+) -> tuple[str, list[str]] | None:
+    """When study is active, authorize using the selected CRO/sponsor/SMO org role."""
+    if "study" not in jwt_actors:
+        return None
+    slug = _active_org_role_slug()
+    if not slug:
+        for candidate in row.get("roles") or []:
+            text = str(candidate).strip()
+            if text.partition(".")[0] in _STUDY_TENANT_TYPES:
+                slug = text
+                break
+    if not slug or "." not in slug:
+        return None
+    tenant_type, _, short = slug.partition(".")
+    if tenant_type not in _STUDY_TENANT_TYPES or not short:
+        return None
+    return tenant_type, [short]
+
+
 def _tenant_type(row: dict[str, Any], claims: dict[str, Any]) -> str:
+    study_ctx = _study_authorization_context(row, _jwt_active_actors(claims))
+    if study_ctx:
+        return study_ctx[0]
     claim_type = claims.get(_jwt_claim("tenant_type"))
     if claim_type:
         return str(claim_type)
@@ -128,6 +164,10 @@ def _tenant_type(row: dict[str, Any], claims: dict[str, Any]) -> str:
 
 
 def _roles_for_cedar(row: dict[str, Any], claims: dict[str, Any]) -> list[str]:
+    jwt_actors = _jwt_active_actors(claims)
+    study_ctx = _study_authorization_context(row, jwt_actors)
+    if study_ctx:
+        return study_ctx[1]
     tenant_type = _tenant_type(row, claims)
     jwt_roles = _jwt_list(claims, _jwt_claim("roles"))
     if jwt_roles:
@@ -146,6 +186,7 @@ def _user_attrs(row: dict[str, Any], claims: dict[str, Any]) -> dict[str, Any]:
         "actorClass": "",
         "tokenType": principal_token_type(),
         "isOperator": "operator" in jwt_actors,
+        "isStudy": "study" in jwt_actors,
         "isClinician": "clinician" in jwt_actors,
     }
 
@@ -168,6 +209,7 @@ def _principal_from_claims(claims: dict[str, Any]) -> dict[str, Any]:
             "actorClass": "operator" if "operator" in jwt_actors else "",
             "tokenType": principal_token_type(),
             "isOperator": "operator" in jwt_actors,
+            "isStudy": "study" in jwt_actors,
             "isClinician": "clinician" in jwt_actors,
         },
     )

@@ -23,12 +23,28 @@ _PUBLIC_PEM = _PUBLIC_KEY.public_bytes(
     format=serialization.PublicFormat.SubjectPublicKeyInfo
 )
 
-os.environ["JWT_PUBLIC_KEY"] = base64.b64encode(_PUBLIC_PEM).decode('utf-8')
+os.environ["JWT_PUBLIC_KEY"] = base64.b64encode(_PUBLIC_PEM).decode("utf-8")
+os.environ.pop("JWT_JWKS_URI", None)
+os.environ["JWT_AUDIENCE"] = "user"
 os.environ["ENV"] = "test"
 os.environ["APP_DATABASE_URL"] = "postgresql+psycopg://app:dummy@localhost/dummy"
 os.environ["MIGRATION_DATABASE_URL"] = "postgresql+psycopg://template:dummy@localhost/dummy"
-
 from src.app import create_app  # noqa: E402 — must import after env vars are set
+
+_TIER1_ACTORS = frozenset({"operator", "study", "clinician", "patient"})
+
+from src.domain.role_catalog import init_actor_classes  # noqa: E402
+
+init_actor_classes(_TIER1_ACTORS)
+
+
+@pytest.fixture(autouse=True)
+def _tier1_actor_classes_for_unit_tests():
+    """Module-level ``app = create_app()`` must not leave catalog actors empty between tests."""
+    init_actor_classes(_TIER1_ACTORS)
+    yield
+    init_actor_classes(_TIER1_ACTORS)
+
 
 @pytest.fixture(scope="session")
 def rsa_keypair():
@@ -37,7 +53,15 @@ def rsa_keypair():
 
 @pytest.fixture
 def app():
-    application = create_app({"TESTING": True})
+    application = create_app(
+        {
+            "TESTING": True,
+            "TIER1_ACTOR_CLASSES": _TIER1_ACTORS,
+            "JWT_JWKS_URI": None,
+            "JWT_PUBLIC_KEY": _PUBLIC_PEM.decode("utf-8"),
+            "JWT_AUDIENCE": "user",
+        }
+    )
     return application
 
 

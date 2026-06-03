@@ -324,7 +324,7 @@ def get_user_audits(user_id: str):
     action=Capabilities.USER_PROVISION,
     resource_fn=_provision_resource,
     entities_fn=_provision_entities,
-    enforce_active_role=False,
+    enforce_active_actor=False,
     rate_limit=settings.user_write_rate_limit,
 )
 def provision_user(user_id: str):

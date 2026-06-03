@@ -28,6 +28,7 @@ def _token(
     actors: list[str],
     tenant_type: str = "platform",
     roles: list[str] | None = None,
+    session_actors: list[str] | None = None,
 ):
     claims = {
         "sub": sub,
@@ -37,6 +38,8 @@ def _token(
         _claim("actors"): actors,
         _claim("tenant_type"): tenant_type,
     }
+    if session_actors is not None:
+        claims[_claim("session_actors")] = session_actors
     if roles is not None:
         claims[_claim("roles")] = roles
     return jwt.encode(claims, rsa_keypair["private"], algorithm="RS256")
@@ -306,17 +309,17 @@ def test_patch_accepts_cross_tenant_type_roles_for_platform_user(
         **row,
         "roles": [
             "platform.admin",
-            "cro.clinical-ops",
             "patient.self",
             "site.clinical",
-            "smo.readonly",
         ],
     }
     mock_update.return_value = updated
+    tier1 = ["operator", "clinician", "patient"]
     token = _token(
         rsa_keypair,
         sub=USER,
-        actors=["operator", "clinician", "patient"],
+        actors=tier1,
+        session_actors=tier1,
         tenant_type="platform",
     )
     response = client.patch(
@@ -401,9 +404,16 @@ def test_list_roles_returns_catalog(mock_load_user, client, rsa_keypair):
     assert response.json["assigner_actors"] == ["operator"]
     assert "platform.admin" in response.json["roles"]
     assert "site.clinical" not in response.json["roles"]
-    assert response.json["assigner_actor_prefixes"] == {
-        "operator": ["platform.", "cro.", "sponsor.", "smo."],
-    }
+    assert response.json["assigner_actor_prefixes"]["operator"] == ["platform."]
+    assert response.json["assigner_actor_prefixes"]["study"] == [
+        "cro.",
+        "sponsor.",
+        "smo.",
+    ]
+    assert any(
+        entry["id"] == "platform.admin" and entry["label"]
+        for entry in response.json["role_definitions"]
+    )
 
 
 @patch("src.services.user_service.get_user_or_404")

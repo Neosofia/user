@@ -185,7 +185,9 @@ def create_user(db, actor_uuid: str, payload: dict, *, assigner_actor_list: list
     tenant_id = _uuid.UUID(str(payload["tenant_uuid"]))
 
     roles = list(payload.get("roles") or [])
-    actors = [actor for actor in assigner_actor_list if actor in {"operator", "clinician", "patient"}]
+    from src.domain.role_catalog import actor_classes
+
+    actors = [actor for actor in assigner_actor_list if actor in actor_classes()]
     clinician_only = actors == ["clinician"]
     if not roles:
         if clinician_only:

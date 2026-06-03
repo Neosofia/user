@@ -53,6 +53,12 @@ def test_validate_roles_for_assigner_actors_operator_namespace():
         validate_roles_for_assigner_actors(["site.clinical"], ["operator"])
 
 
+def test_validate_roles_for_assigner_actors_study_namespace():
+    validate_roles_for_assigner_actors(["cro.clinical-ops"], ["study"])
+    with pytest.raises(ValueError, match="disallowed"):
+        validate_roles_for_assigner_actors(["platform.audit"], ["study"])
+
+
 def test_validate_roles_for_assigner_actors_union():
     validate_roles_for_assigner_actors(
         ["platform.audit", "site.clinical"],
@@ -71,7 +77,10 @@ def test_validate_roles_for_assigner_allows_cross_tenant_type_slugs():
         "site.clinical",
         "smo.readonly",
     ]
-    validate_roles_for_assigner_actors(roles, ["operator", "clinician", "patient"])
+    validate_roles_for_assigner_actors(roles, ["operator", "study", "clinician", "patient"])
+
+    with pytest.raises(ValueError, match="disallowed"):
+        validate_roles_for_assigner_actors(["cro.clinical-ops"], ["operator"])
 
 
 def test_roles_for_actors_union():
@@ -89,6 +98,34 @@ def test_roles_for_actor_filters_catalog():
 
 def test_default_catalog_includes_platform_admin():
     assert "platform.admin" in role_ids()
+
+
+def test_catalog_role_objects_with_labels(tmp_path):
+    path = tmp_path / "roles.json"
+    path.write_text(
+        """
+        {
+          "tenant_types": {
+            "patient": { "roles": ["self"] }
+          },
+          "roles": [
+            { "id": "patient.self", "label": "Patient" }
+          ],
+          "assigner_actors": { "patient": ["patient."] }
+        }
+        """,
+        encoding="utf-8",
+    )
+    catalog = load_catalog_file(path)
+    assert catalog.role_labels["patient.self"] == "Patient"
+
+
+def test_role_definition_falls_back_to_slug_label():
+    from src.domain.role_catalog import role_definition
+
+    entry = role_definition("platform.admin")
+    assert entry["id"] == "platform.admin"
+    assert entry["label"] == "Admin"
 
 
 def test_role_short_names_strips_tenant_prefix():

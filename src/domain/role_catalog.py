@@ -10,8 +10,28 @@ from typing import Any
 
 from src.bootstrap.config import settings
 
-ACTOR_CLASSES: frozenset[str] = frozenset({"operator", "clinician", "patient"})
 DEFAULT_ROLE_CATALOG_PATH = Path(__file__).resolve().parents[2] / "roles" / "default.json"
+
+_tier1_actor_classes: frozenset[str] = frozenset()
+
+
+def init_actor_classes(classes: frozenset[str]) -> None:
+    """Set Tier-1 actors from Flask startup (platform-actors.json or test config)."""
+    global _tier1_actor_classes
+    _tier1_actor_classes = classes
+
+
+def actor_classes() -> frozenset[str]:
+    """Tier-1 actors from Authentication platform-actors.json (cached on the Flask app)."""
+    from flask import has_app_context, current_app
+
+    from authentication_in_the_middle.actors import ensure_tier1_actor_classes
+
+    if has_app_context():
+        return ensure_tier1_actor_classes(current_app)
+    return _tier1_actor_classes
+
+
 VALID_TENANT_TYPES: frozenset[str] = frozenset(
     {"platform", "cro", "sponsor", "site", "smo", "patient"}
 )
@@ -22,6 +42,12 @@ class RoleCatalog:
     role_ids: frozenset[str]
     tenant_types: dict[str, frozenset[str]]
     assigner_actors: dict[str, tuple[str, ...]]
+    role_labels: dict[str, str]
+
+
+def _default_role_label(role_id: str) -> str:
+    _, _, short = role_id.partition(".")
+    return short.replace("-", " ").title()
 
 
 def _role_id(value: object) -> str:
@@ -82,11 +108,27 @@ def _tenant_types_from_mapping(data: dict[str, Any], source: Path) -> dict[str, 
     return tenant_types
 
 
+def _role_entry(role: object, source: Path) -> tuple[str, str]:
+    if isinstance(role, str):
+        role_id = _role_id(role)
+        return role_id, _default_role_label(role_id)
+    if isinstance(role, dict):
+        role_id = _role_id(role)
+        raw_label = role.get("label")
+        label = str(raw_label).strip() if raw_label is not None else ""
+        return role_id, label or _default_role_label(role_id)
+    raise ValueError(f"{source} roles entries must be strings or objects with id")
+
+
 def _catalog_from_mapping(data: dict[str, Any], source: Path) -> RoleCatalog:
     raw_roles = data.get("roles")
     if not isinstance(raw_roles, list):
         raise ValueError(f"{source} must contain a roles list")
-    roles = frozenset(_role_id(role) for role in raw_roles)
+    role_labels: dict[str, str] = {}
+    for role in raw_roles:
+        role_id, label = _role_entry(role, source)
+        role_labels[role_id] = label
+    roles = frozenset(role_labels)
     tenant_types = _tenant_types_from_mapping(data, source)
 
     raw_prefixes = data.get("assigner_actors", {})
@@ -97,7 +139,12 @@ def _catalog_from_mapping(data: dict[str, Any], source: Path) -> RoleCatalog:
         actor_key = str(actor).strip()
         validate_actor(actor_key)
         prefixes[actor_key] = _prefixes(raw_value, actor_key)
-    return RoleCatalog(role_ids=roles, tenant_types=tenant_types, assigner_actors=prefixes)
+    return RoleCatalog(
+        role_ids=roles,
+        tenant_types=tenant_types,
+        assigner_actors=prefixes,
+        role_labels=role_labels,
+    )
 
 
 def load_catalog_file(path: Path) -> RoleCatalog:
@@ -122,10 +169,13 @@ def merge_catalogs(default: RoleCatalog, overlay: RoleCatalog | None) -> RoleCat
         for prefix in values:
             if prefix not in existing:
                 existing.append(prefix)
+    role_labels = dict(default.role_labels)
+    role_labels.update(overlay.role_labels)
     return RoleCatalog(
         role_ids=frozenset(default.role_ids | overlay.role_ids),
         tenant_types=tenant_types,
         assigner_actors={actor: tuple(values) for actor, values in prefixes.items()},
+        role_labels=role_labels,
     )
 
 
@@ -149,6 +199,15 @@ def assigner_actors() -> dict[str, tuple[str, ...]]:
     return role_catalog().assigner_actors
 
 
+def role_labels() -> dict[str, str]:
+    return role_catalog().role_labels
+
+
+def role_definition(role_id: str) -> dict[str, str]:
+    labels = role_labels()
+    return {"id": role_id, "label": labels.get(role_id, _default_role_label(role_id))}
+
+
 def roles_for_actor(actor: str) -> frozenset[str]:
     prefixes = assigner_actors().get(actor, ())
     return frozenset(
@@ -161,12 +220,12 @@ def assigner_actors_from_jwt(roles: list[str]) -> list[str]:
     actor: list[str] = []
     seen: set[str] = set()
     for role in roles:
-        if role in ACTOR_CLASSES and role not in seen:
+        if role in actor_classes() and role not in seen:
             seen.add(role)
             actor.append(role)
     if not actor:
         raise ValueError(
-            "JWT must include at least one Tier-1 role (operator, clinician, patient)"
+            "JWT must include at least one Tier-1 role (operator, study, clinician, patient)"
         )
     return actor
 
@@ -179,8 +238,9 @@ def roles_for_actors(actors: list[str]) -> frozenset[str]:
 
 
 def validate_actor(actor: str) -> None:
-    if actor not in ACTOR_CLASSES:
-        raise ValueError(f"actor role must be one of {sorted(ACTOR_CLASSES)}")
+    allowed = actor_classes()
+    if actor not in allowed:
+        raise ValueError(f"actor role must be one of {sorted(allowed)}")
 
 
 def validate_roles(roles: list[str]) -> None:
