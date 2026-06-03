@@ -163,26 +163,38 @@ def _tenant_type(row: dict[str, Any], claims: dict[str, Any]) -> str:
     return "platform"
 
 
-def _roles_for_cedar(row: dict[str, Any], claims: dict[str, Any]) -> list[str]:
+def _roles_for_cedar(
+    row: dict[str, Any],
+    claims: dict[str, Any],
+    *,
+    prefer_row_roles: bool = False,
+) -> list[str]:
     jwt_actors = _jwt_active_actors(claims)
     study_ctx = _study_authorization_context(row, jwt_actors)
     if study_ctx:
         return study_ctx[1]
     tenant_type = _tenant_type(row, claims)
+    if prefer_row_roles:
+        return role_short_names(list(row.get("roles") or []), tenant_type)
     jwt_roles = _jwt_list(claims, _jwt_claim("roles"))
     if jwt_roles:
         return role_short_names([str(role) for role in jwt_roles if str(role).strip()], tenant_type)
     return role_short_names(list(row.get("roles") or []), tenant_type)
 
 
-def _user_attrs(row: dict[str, Any], claims: dict[str, Any]) -> dict[str, Any]:
+def _user_attrs(
+    row: dict[str, Any],
+    claims: dict[str, Any],
+    *,
+    prefer_row_roles: bool = False,
+) -> dict[str, Any]:
     jwt_actors = _jwt_active_actors(claims)
     tenant_type = _tenant_type(row, claims)
     return {
         "uuid": row["uuid"],
         "tenantId": row["tenant_uuid"],
         "tenantType": tenant_type,
-        "roles": _roles_for_cedar(row, claims),
+        "roles": _roles_for_cedar(row, claims, prefer_row_roles=prefer_row_roles),
         "actorClass": "",
         "tokenType": principal_token_type(),
         "isOperator": "operator" in jwt_actors,
@@ -234,12 +246,16 @@ def build_user_resource_entity(
     return build_entity_payload(
         f"{NAMESPACE}::User",
         user_id,
-        _user_attrs(row, claims or _claims()),
+        _user_attrs(row, claims or _claims(), prefer_row_roles=True),
     )
 
 
 def build_principal_entity(row: dict[str, Any], claims: dict[str, Any]) -> dict[str, Any]:
-    return build_user_resource_entity(row["uuid"], row, claims)
+    return build_entity_payload(
+        f"{NAMESPACE}::User",
+        row["uuid"],
+        _user_attrs(row, claims, prefer_row_roles=False),
+    )
 
 
 def build_user_catalog_entity() -> dict[str, Any]:

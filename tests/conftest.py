@@ -1,6 +1,7 @@
 import json
 import pytest
 import base64
+import shutil
 from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -30,11 +31,27 @@ os.environ["ENV"] = "test"
 os.environ["APP_DATABASE_URL"] = "postgresql+psycopg://app:dummy@localhost/dummy"
 os.environ["MIGRATION_DATABASE_URL"] = "postgresql+psycopg://template:dummy@localhost/dummy"
 
-_cdp_packed_policies = (
-    Path(__file__).resolve().parents[2] / "cdp" / "policies-packed" / "user"
-)
-if _cdp_packed_policies.is_dir() and any(_cdp_packed_policies.glob("*.cedar")):
-    os.environ["AUTHORIZATION_POLICIES_DIR"] = str(_cdp_packed_policies)
+_tests_dir = Path(__file__).resolve().parent
+_repo_root = _tests_dir.parent
+_base_policies = _repo_root / "policies"
+_cdp_override = _tests_dir / "policies" / "cdp_clinician_patient_roster.cedar"
+_cdp_packed_policies = _repo_root.parent / "cdp" / "policies-packed" / "user"
+
+
+def _configure_authorization_policies_dir() -> None:
+    if _cdp_packed_policies.is_dir() and any(_cdp_packed_policies.glob("*.cedar")):
+        os.environ["AUTHORIZATION_POLICIES_DIR"] = str(_cdp_packed_policies)
+        return
+    packed = _tests_dir / ".packed-policies"
+    packed.mkdir(parents=True, exist_ok=True)
+    for src in _base_policies.glob("*.cedar"):
+        shutil.copy2(src, packed / src.name)
+    if _cdp_override.is_file():
+        shutil.copy2(_cdp_override, packed / _cdp_override.name)
+    os.environ["AUTHORIZATION_POLICIES_DIR"] = str(packed)
+
+
+_configure_authorization_policies_dir()
 
 from src.app import create_app  # noqa: E402 — must import after env vars are set
 

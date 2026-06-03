@@ -11,6 +11,7 @@ __pycache__/
 !.env.example
 .coverage
 htmlcov/
+tests/.packed-policies/
 dist/
 build/
 *.egg-info/
