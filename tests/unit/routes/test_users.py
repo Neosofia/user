@@ -183,7 +183,10 @@ def test_create_user_returns_conflict(mock_session, mock_get_principal, client, 
     mock_session.return_value.__enter__.return_value = MagicMock()
     with patch(
         "src.services.user_service.create_user",
-        side_effect=user_routes.user_service.ConflictError(),
+        side_effect=user_routes.user_service.ConflictError(
+            "Display code 'PAT-9001' is already assigned to another patient "
+            "in this organization. Use a different code or enroll the existing patient."
+        ),
     ):
         token = _token(rsa_keypair, sub=USER, actors=["clinician"])
         response = client.post(
@@ -193,9 +196,11 @@ def test_create_user_returns_conflict(mock_session, mock_get_principal, client, 
                 "first_name": "Jordan",
                 "last_name": "Lee",
                 "email": "jordan@example.com",
+                "display_code": "PAT-9001",
             },
         )
     assert response.status_code == 409
+    assert "Display code 'PAT-9001'" in response.json["message"]
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -296,6 +301,62 @@ def test_list_roles_allowed_for_clinician(mock_load_user, client, rsa_keypair):
     assert response.status_code == 200
     assert "site.clinical" in response.json["roles"]
     assert "platform.admin" not in response.json["roles"]
+
+
+@patch("src.services.user_service.update_user")
+@patch("src.services.user_service.get_user_or_404")
+def test_patch_patient_clinician_can_update_profile(mock_load_user, mock_update, client, rsa_keypair):
+    clinician = _sample_user(USER)
+    clinician["roles"] = ["site.clinical"]
+    patient = {
+        **_sample_user(OTHER),
+        "roles": ["patient.self"],
+        "display_code": "PAT-1001",
+    }
+    updated = {**patient, "first_name": "Alice", "last_name": "Demo"}
+
+    def load_user(user_id: str) -> dict:
+        if user_id == USER:
+            return clinician
+        return patient
+
+    mock_load_user.side_effect = load_user
+    mock_update.return_value = updated
+    token = _token(rsa_keypair, sub=USER, actors=["clinician"])
+    response = client.patch(
+        f"/api/v1/users/{OTHER}",
+        headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
+        json={
+            "display_code": "PAT-1001",
+            "first_name": "Alice",
+            "last_name": "Demo",
+            "email": "alice@example.com",
+        },
+    )
+    assert response.status_code == 200
+    mock_update.assert_called_once()
+    assert mock_update.call_args.kwargs["self_service"] is False
+
+
+@patch("src.services.user_service.get_user_or_404")
+def test_patch_patient_clinician_rejects_admin_fields(mock_load_user, client, rsa_keypair):
+    clinician = _sample_user(USER)
+    patient = {**_sample_user(OTHER), "roles": ["patient.self"]}
+
+    def load_user(user_id: str) -> dict:
+        if user_id == USER:
+            return clinician
+        return patient
+
+    mock_load_user.side_effect = load_user
+    token = _token(rsa_keypair, sub=USER, actors=["clinician"])
+    response = client.patch(
+        f"/api/v1/users/{OTHER}",
+        headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
+        json={"first_name": "Alice", "roles": ["platform.admin"]},
+    )
+    assert response.status_code == 400
+    assert "remove:" in response.json["message"]
 
 
 @patch("src.services.user_service.update_user")

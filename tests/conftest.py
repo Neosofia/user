@@ -29,6 +29,13 @@ os.environ["JWT_AUDIENCE"] = "user"
 os.environ["ENV"] = "test"
 os.environ["APP_DATABASE_URL"] = "postgresql+psycopg://app:dummy@localhost/dummy"
 os.environ["MIGRATION_DATABASE_URL"] = "postgresql+psycopg://template:dummy@localhost/dummy"
+
+_cdp_packed_policies = (
+    Path(__file__).resolve().parents[2] / "cdp" / "policies-packed" / "user"
+)
+if _cdp_packed_policies.is_dir() and any(_cdp_packed_policies.glob("*.cedar")):
+    os.environ["AUTHORIZATION_POLICIES_DIR"] = str(_cdp_packed_policies)
+
 from src.app import create_app  # noqa: E402 — must import after env vars are set
 
 _TIER1_ACTORS = frozenset({"operator", "study", "clinician", "patient"})

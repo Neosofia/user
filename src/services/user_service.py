@@ -11,7 +11,47 @@ from src.models.user import User, UserHistory
 
 
 class ConflictError(Exception):
-    pass
+    """Registry write conflict (unique constraint or concurrent upsert)."""
+
+
+def _display_code_conflict_message(display_code: str | None) -> str:
+    if display_code:
+        return (
+            f"Display code {display_code!r} is already assigned to another patient "
+            "in this organization. Use a different code or enroll the existing patient."
+        )
+    return "Display code is already in use for another patient in this organization."
+
+
+def _integrity_conflict_message(exc: IntegrityError, *, display_code: str | None = None) -> str:
+    detail = str(exc.orig).lower() if exc.orig else str(exc).lower()
+    if "uq_users_tenant_display_code" in detail or (
+        "display_code" in detail and "tenant_uuid" in detail
+    ):
+        return _display_code_conflict_message(display_code)
+    if "idp_id" in detail:
+        return "A user with this identity provider id already exists."
+    if "users_pkey" in detail or "uuid" in detail and "unique" in detail:
+        return "A user with this identifier already exists."
+    return "A user with these details already exists in the registry."
+
+
+def _display_code_in_use(
+    db,
+    tenant_id: _uuid.UUID,
+    display_code: str | None,
+    *,
+    exclude_uuid: _uuid.UUID | None = None,
+) -> bool:
+    if not display_code:
+        return False
+    query = select(User.uuid).where(
+        User.tenant_uuid == tenant_id,
+        User.display_code == display_code,
+    )
+    if exclude_uuid is not None:
+        query = query.where(User.uuid != exclude_uuid)
+    return db.scalar(query) is not None
 
 
 SYSTEM_ACTOR_UUID = _uuid.UUID("00000000-0000-7000-8000-000000000000")
@@ -100,7 +140,8 @@ def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_serv
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise ConflictError("user update conflict") from exc
+        display_code = row.display_code if row is not None else None
+        raise ConflictError(_integrity_conflict_message(exc, display_code=display_code)) from exc
     db.refresh(row)
     return _row_to_dict(row)
 
@@ -173,7 +214,7 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise ConflictError("user provisioning conflict") from exc
+        raise ConflictError(_integrity_conflict_message(exc, display_code=row.display_code)) from exc
     db.refresh(row)
     return _row_to_dict(row), created
 
@@ -255,11 +296,14 @@ def create_user(db, actor_uuid: str, payload: dict, *, assigner_actor_list: list
         row.changed_by_uuid = actor_id
         row.changed_by_type = 1
 
+    if _display_code_in_use(db, tenant_id, display_code, exclude_uuid=None if created else user_uuid):
+        raise ConflictError(_display_code_conflict_message(display_code))
+
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise ConflictError("user create conflict") from exc
+        raise ConflictError(_integrity_conflict_message(exc, display_code=display_code)) from exc
     db.refresh(row)
     log_event("user_created", actor_uuid=actor_uuid, user_uuid=str(user_uuid), created=created)
     return _row_to_dict(row), created

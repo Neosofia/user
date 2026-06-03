@@ -311,6 +311,7 @@ def test_get_user_audits_returns_items():
 def test_create_user_defaults_patient_role_for_clinician():
     mock_db = MagicMock()
     mock_db.get.return_value = None
+    mock_db.scalar.return_value = None
     payload = {
         "tenant_uuid": str(TENANT),
         "first_name": "Jordan",
@@ -355,6 +356,7 @@ def test_create_user_rejects_non_patient_roles_for_clinician():
 def test_create_user_clinician_enrollment_skips_assigner_catalog():
     mock_db = MagicMock()
     mock_db.get.return_value = None
+    mock_db.scalar.return_value = None
     payload = {
         "tenant_uuid": str(TENANT),
         "first_name": "Jordan",
@@ -378,6 +380,7 @@ def test_create_user_upserts_when_uuid_provided():
     mock_db = MagicMock()
     existing = MagicMock()
     mock_db.get.return_value = existing
+    mock_db.scalar.return_value = None
     payload = {
         "tenant_uuid": str(TENANT),
         "uuid": str(OTHER_USER_ID),
@@ -401,6 +404,29 @@ def test_create_user_upserts_when_uuid_provided():
     assert result["uuid"] == str(OTHER_USER_ID)
     mock_db.add.assert_not_called()
     mock_db.commit.assert_called_once()
+
+
+def test_create_user_rejects_duplicate_display_code():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+    mock_db.scalar.return_value = uuid.uuid4()
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "display_code": "PAT-9001",
+    }
+
+    with pytest.raises(user_service.ConflictError, match="Display code 'PAT-9001'"):
+        user_service.create_user(
+            mock_db,
+            str(USER_ID),
+            payload,
+            assigner_actor_list=["clinician"],
+        )
+
+    mock_db.commit.assert_not_called()
 
 
 def test_create_user_rejects_uuid_for_clinician():

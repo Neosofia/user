@@ -12,12 +12,14 @@ from src.bootstrap.logging_config import log_event
 from src.db.engine import SessionLocal
 from src.domain.role_catalog import validate_roles_for_assigner_actors
 from src.services import user_service
+from src.services.user_service import PATIENT_SELF_ROLE
 
 bp = Blueprint("users", __name__, url_prefix="/api/v1/users")
 
 _DEFAULT_PAGE_SIZE = 20
 _MAX_PAGE_SIZE = 100
 _SELF_FIELDS = frozenset({"first_name", "last_name", "email"})
+_CLINICIAN_PATIENT_PROFILE_FIELDS = frozenset({"display_code", "first_name", "last_name", "email"})
 _IMMUTABLE_FIELDS = frozenset({"uuid", "idp_id", "actor_class"})
 _UNSUPPORTED_SCOPE_FIELDS = frozenset({
     "site_uuid",
@@ -52,6 +54,10 @@ def _reject_immutable_fields(data: dict) -> str | None:
     return None
 
 
+def _is_clinician_only() -> bool:
+    return auth_entities.principal_actors() == ["clinician"]
+
+
 def _reject_unsupported_scope_fields(data: dict) -> str | None:
     present = _UNSUPPORTED_SCOPE_FIELDS.intersection(data.keys())
     if present:
@@ -67,6 +73,7 @@ def _validate_update_payload(
     *,
     self_service: bool,
     target: dict | None = None,
+    clinician_only: bool = False,
 ) -> str | None:
     if not data:
         return "empty body"
@@ -83,6 +90,16 @@ def _validate_update_payload(
                 f"self-service update allows only {sorted(_SELF_FIELDS)}; "
                 f"remove: {sorted(extra)}"
             )
+        return None
+    if clinician_only:
+        extra = set(data.keys()) - _CLINICIAN_PATIENT_PROFILE_FIELDS
+        if extra:
+            return (
+                f"clinician patient profile update allows only "
+                f"{sorted(_CLINICIAN_PATIENT_PROFILE_FIELDS)}; remove: {sorted(extra)}"
+            )
+        if target is not None and PATIENT_SELF_ROLE not in (target.get("roles") or []):
+            return "clinician may update patient.self users only"
         return None
     if "roles" in data:
         if target is None:
@@ -246,8 +263,8 @@ def create_user():
             return jsonify(item), 201 if created else 200
     except ValueError as exc:
         return jsonify({"error": "invalid_request", "message": str(exc)}), 400
-    except user_service.ConflictError:
-        return jsonify({"error": "conflict", "message": "user create conflict"}), 409
+    except user_service.ConflictError as exc:
+        return jsonify({"error": "conflict", "message": str(exc)}), 409
     except Exception as exc:
         log_event("create_user_failed", error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
@@ -266,14 +283,20 @@ def patch_user(user_id: str):
     self_service = (
         auth_entities.principal_sub() == user_id and not auth_entities.principal_is_operator()
     )
+    clinician_only = _is_clinician_only() and not self_service
     target = None
-    if not self_service and "roles" in data:
+    if not self_service and ("roles" in data or clinician_only):
         try:
             target = user_service.get_user_or_404(user_id)
         except NotFound:
             return jsonify({"error": "not_found"}), 404
     try:
-        message = _validate_update_payload(data, self_service=self_service, target=target)
+        message = _validate_update_payload(
+            data,
+            self_service=self_service,
+            target=target,
+            clinician_only=clinician_only,
+        )
     except ValueError as exc:
         return jsonify({"error": "invalid_request", "message": str(exc)}), 400
     if message:
@@ -290,8 +313,8 @@ def patch_user(user_id: str):
             )
             log_event("user_updated", actor_uuid=actor, user_uuid=user_id)
             return jsonify(item), 200
-    except user_service.ConflictError:
-        return jsonify({"error": "conflict", "message": "user update conflict"}), 409
+    except user_service.ConflictError as exc:
+        return jsonify({"error": "conflict", "message": str(exc)}), 409
     except Exception as exc:
         log_event("patch_user_failed", error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
@@ -337,8 +360,8 @@ def provision_user(user_id: str):
             item, created = user_service.provision_user_identity(db, user_id, data)
             log_event("user_provisioned", user_uuid=user_id, created=created)
             return jsonify(item), 201 if created else 200
-    except user_service.ConflictError:
-        return jsonify({"error": "conflict", "message": "user provisioning conflict"}), 409
+    except user_service.ConflictError as exc:
+        return jsonify({"error": "conflict", "message": str(exc)}), 409
     except Exception as exc:
         log_event("provision_user_failed", error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500

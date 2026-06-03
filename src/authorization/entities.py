@@ -154,12 +154,12 @@ def _tenant_type(row: dict[str, Any], claims: dict[str, Any]) -> str:
     study_ctx = _study_authorization_context(row, _jwt_active_actors(claims))
     if study_ctx:
         return study_ctx[0]
-    claim_type = claims.get(_jwt_claim("tenant_type"))
-    if claim_type:
-        return str(claim_type)
     for slug in row.get("roles") or []:
         if "." in slug:
             return slug.split(".", 1)[0]
+    claim_type = claims.get(_jwt_claim("tenant_type"))
+    if claim_type:
+        return str(claim_type)
     return "platform"
 
 

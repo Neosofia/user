@@ -67,7 +67,6 @@ COPY src ./src
 COPY roles ./roles
 COPY policies ./policies
 COPY openapi.json ./openapi.json
-COPY .env.example .env
 
 # Audit SQL applied by Alembic migration 000
 COPY --from=audit-templates /sql/audit /app/audit-templates

@@ -90,3 +90,4 @@ Shared JWT, JWKS, CORS, healthcheck, and PaaS networking guidance live in the in
 - **JWKS:** Point `JWT_JWKS_URI` at the authentication service (private mesh URL in cloud, not localhost).
 - **CORS:** Set `FRONTEND_URL` to the UI origin.
 - **Health:** Exempt `/health` from forced HTTPS redirect behind TLS-terminating proxies (`ENV=development` locally disables strict HTTPS for Talisman).
+- **Railway port:** Set `PORT=8080` on the user service so gunicorn listens on the same port as the Railway public domain target (Networking → Public Networking → target port). Use `http://user.railway.internal:8080` for authentication `services.base_url` (migration `005` / DB row), not the local spec port `8018`. Mismatch (app on `8018`, domain on `8080`) yields edge `502` and breaks login-time provisioning.

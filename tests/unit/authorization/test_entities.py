@@ -38,3 +38,13 @@ def test_tenant_type_for_study_uses_org_role_header(app):
     with app.test_request_context("/", headers={"X-Active-Org-Role": "cro.acme"}):
         g.jwt_claims = {"sub": USER, _claim("actors"): ["study"]}
         assert entities.tenant_type_for_row({"roles": ["cro.acme"]}) == "cro"
+
+
+def test_tenant_type_prefers_registry_roles_over_jwt_claim(app):
+    with app.test_request_context("/"):
+        g.jwt_claims = {
+            "sub": USER,
+            _claim("tenant_type"): "platform",
+            _claim("actors"): ["clinician"],
+        }
+        assert entities.tenant_type_for_row({"roles": ["patient.self"]}) == "patient"
