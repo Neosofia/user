@@ -18,7 +18,7 @@ bp = Blueprint("users", __name__, url_prefix="/api/v1/users")
 
 _DEFAULT_PAGE_SIZE = 20
 _MAX_PAGE_SIZE = 100
-_SELF_FIELDS = frozenset({"first_name", "last_name", "email"})
+_SELF_FIELDS = frozenset({"first_name", "last_name", "email", "tos_accepted"})
 _CLINICIAN_PATIENT_PROFILE_FIELDS = frozenset({"display_code", "first_name", "last_name", "email"})
 _IMMUTABLE_FIELDS = frozenset({"uuid", "idp_id", "actor_class"})
 _UNSUPPORTED_SCOPE_FIELDS = frozenset({
@@ -90,6 +90,8 @@ def _validate_update_payload(
                 f"self-service update allows only {sorted(_SELF_FIELDS)}; "
                 f"remove: {sorted(extra)}"
             )
+        if "tos_accepted" in data and data.get("tos_accepted") is not True:
+            return "tos_accepted may only be set to true"
         return None
     if clinician_only:
         extra = set(data.keys()) - _CLINICIAN_PATIENT_PROFILE_FIELDS
@@ -280,9 +282,11 @@ def get_user(user_id: str):
 @with_security(action=Capabilities.USER_UPDATE, rate_limit=settings.user_write_rate_limit)
 def patch_user(user_id: str):
     data = request.get_json(silent=True) or {}
+    is_own_user = auth_entities.principal_sub() == user_id
+    tos_self_accept = is_own_user and set(data.keys()) == {"tos_accepted"}
     self_service = (
-        auth_entities.principal_sub() == user_id and not auth_entities.principal_is_operator()
-    )
+        is_own_user and not auth_entities.principal_is_operator()
+    ) or tos_self_accept
     clinician_only = _is_clinician_only() and not self_service
     target = None
     if not self_service and ("roles" in data or clinician_only):

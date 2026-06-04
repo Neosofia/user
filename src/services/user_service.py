@@ -71,6 +71,7 @@ def _row_to_dict(row: User) -> dict:
         "last_name": row.last_name,
         "email": row.email,
         "roles": list(row.roles or []),
+        "tos_accepted": bool(row.tos_accepted),
     }
 
 
@@ -121,6 +122,9 @@ def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_serv
             if field in payload:
                 value = (payload.get(field) or "").strip() or None
                 setattr(row, field, value)
+        if "tos_accepted" in payload:
+            if payload.get("tos_accepted") is True:
+                row.tos_accepted = True
     else:
         field_map = {
             "tenant_uuid": lambda v: _uuid.UUID(str(v)),

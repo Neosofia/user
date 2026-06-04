@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Text
+from sqlalchemy import Boolean, Text
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,12 @@ class User(Base, AuditColumnsMixin):
     last_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
     roles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
+    tos_accepted: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+        comment="True after the user accepts the platform Terms of Service in CDP UI",
+    )
 
 
 class UserHistory(Base, HistoryColumnsMixin):
@@ -42,3 +48,4 @@ class UserHistory(Base, HistoryColumnsMixin):
     last_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
     roles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
+    tos_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")

@@ -106,6 +106,23 @@ def test_update_user_self_service_fields():
     assert result["first_name"] == "Ben"
 
 
+def test_update_user_self_service_accepts_tos():
+    mock_db = MagicMock()
+    row = _user_row(tos_accepted=False)
+    mock_db.get.return_value = row
+
+    result = user_service.update_user(
+        mock_db,
+        str(USER_ID),
+        str(USER_ID),
+        {"tos_accepted": True},
+        self_service=True,
+    )
+
+    assert row.tos_accepted is True
+    assert result["tos_accepted"] is True
+
+
 def test_update_user_operator_fields():
     mock_db = MagicMock()
     row = _user_row()

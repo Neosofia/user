@@ -201,9 +201,13 @@
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
           "email": { "type": "string", "nullable": true },
-          "roles": { "type": "array", "items": { "type": "string" } }
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "tos_accepted": {
+            "type": "boolean",
+            "description": "True after the user accepts the platform Terms of Service in CDP UI"
+          }
         },
-        "required": ["uuid", "tenant_uuid", "idp_id", "roles"]
+        "required": ["uuid", "tenant_uuid", "idp_id", "roles", "tos_accepted"]
       },
       "UserListResponse": {
         "type": "object",
@@ -223,7 +227,11 @@
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
           "email": { "type": "string", "nullable": true },
-          "roles": { "type": "array", "items": { "type": "string" } }
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "tos_accepted": {
+            "type": "boolean",
+            "description": "Self-service only; may only be set to true to record TOS acceptance"
+          }
         },
         "additionalProperties": false
       },

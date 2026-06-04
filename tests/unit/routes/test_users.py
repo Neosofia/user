@@ -76,6 +76,7 @@ def _sample_user(user_uuid: str = USER) -> dict:
         "last_name": "Operator",
         "email": "sam@example.com",
         "roles": ["platform.admin"],
+        "tos_accepted": False,
     }
 
 
@@ -569,6 +570,29 @@ def test_validate_update_payload_branch_errors():
         {"tenant_uuid": "not-a-uuid"},
         self_service=False,
     )
+    assert user_routes._validate_update_payload(
+        {"tos_accepted": False},
+        self_service=True,
+    ) == "tos_accepted may only be set to true"
+    assert user_routes._validate_update_payload({"tos_accepted": True}, self_service=True) is None
+
+
+@patch("src.services.user_service.update_user")
+@patch("src.services.user_service.get_user_or_404")
+def test_patch_self_accepts_tos(mock_load_user, mock_update, client, rsa_keypair):
+    accepted = {**_sample_user(), "tos_accepted": True}
+    mock_load_user.return_value = _sample_user()
+    mock_update.return_value = accepted
+    token = _token(rsa_keypair, sub=USER, actors=["operator"])
+    response = client.patch(
+        f"/api/v1/users/{USER}",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"tos_accepted": True},
+    )
+    assert response.status_code == 200
+    assert response.json["tos_accepted"] is True
+    mock_update.assert_called_once()
+    assert mock_update.call_args.kwargs["self_service"] is True
 
 
 def test_validate_create_payload_branch_errors():
