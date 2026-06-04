@@ -134,3 +134,67 @@ def test_active_org_role_header_ignored_without_dot(app):
     with app.test_request_context("/", headers={"X-Active-Org-Role": "invalid"}):
         g.jwt_claims = {"sub": USER, _claim("actors"): ["study"]}
         assert entities.tenant_type_for_row({"roles": ["cro.acme"]}) == "cro"
+
+
+def test_operator_tenant_type_uses_platform_org_role_header(app):
+    row = {
+        "uuid": USER,
+        "tenant_uuid": TENANT,
+        "roles": ["site.clinical", "platform.admin", "patient.self"],
+    }
+    claims = {
+        "sub": USER,
+        _claim("actors"): ["operator"],
+        _claim("roles"): ["admin"],
+        _claim("tenant_type"): "platform",
+    }
+    with app.test_request_context(
+        "/",
+        headers={"X-Active-Org-Role": "platform.admin", "X-Active-Actor": "operator"},
+    ):
+        g.jwt_claims = claims
+        entity = entities.build_principal_entity(row, claims)
+    assert entity["attrs"]["tenantType"] == "platform"
+    assert entity["attrs"]["roles"] == ["admin"]
+    assert entity["attrs"]["isOperator"] is True
+
+
+def test_operator_tenant_type_finds_platform_role_when_not_first_in_row(app):
+    row = {
+        "uuid": USER,
+        "tenant_uuid": TENANT,
+        "roles": ["site.clinical", "platform.admin"],
+    }
+    claims = {
+        "sub": USER,
+        _claim("actors"): ["operator"],
+        _claim("roles"): [],
+        _claim("tenant_type"): "platform",
+    }
+    with app.test_request_context("/", headers={"X-Active-Actor": "operator"}):
+        g.jwt_claims = claims
+        entity = entities.build_principal_entity(row, claims)
+    assert entity["attrs"]["tenantType"] == "platform"
+    assert entity["attrs"]["roles"] == ["admin"]
+
+
+def test_clinician_tenant_type_uses_site_org_role_header(app):
+    row = {
+        "uuid": USER,
+        "tenant_uuid": TENANT,
+        "roles": ["platform.admin", "site.clinical"],
+    }
+    claims = {
+        "sub": USER,
+        _claim("actors"): ["clinician"],
+        _claim("roles"): ["clinical"],
+        _claim("tenant_type"): "site",
+    }
+    with app.test_request_context(
+        "/",
+        headers={"X-Active-Org-Role": "site.clinical", "X-Active-Actor": "clinician"},
+    ):
+        g.jwt_claims = claims
+        entity = entities.build_principal_entity(row, claims)
+    assert entity["attrs"]["tenantType"] == "site"
+    assert entity["attrs"]["roles"] == ["clinical"]

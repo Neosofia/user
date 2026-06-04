@@ -119,6 +119,10 @@ def tenant_type_for_row(row: dict[str, Any], claims: dict[str, Any] | None = Non
 
 
 _STUDY_TENANT_TYPES = frozenset({"cro", "sponsor", "smo"})
+_PLATFORM_PREFIX = "platform."
+_SITE_PREFIX = "site."
+_PATIENT_PREFIX = "patient."
+_STUDY_PREFIXES = tuple(f"{tenant}." for tenant in sorted(_STUDY_TENANT_TYPES))
 
 
 def _active_org_role_slug() -> str | None:
@@ -128,6 +132,27 @@ def _active_org_role_slug() -> str | None:
     return None
 
 
+def _resolve_org_role_slug(
+    row: dict[str, Any],
+    header_slug: str | None,
+    prefixes: tuple[str, ...],
+) -> str | None:
+    if header_slug and any(header_slug.startswith(prefix) for prefix in prefixes):
+        return header_slug
+    for candidate in row.get("roles") or []:
+        text = str(candidate).strip()
+        if "." in text and any(text.startswith(prefix) for prefix in prefixes):
+            return text
+    return None
+
+
+def _org_role_context_from_slug(slug: str, allowed_tenant_types: frozenset[str]) -> tuple[str, list[str]] | None:
+    tenant_type, _, short = slug.partition(".")
+    if tenant_type not in allowed_tenant_types or not short:
+        return None
+    return tenant_type, [short]
+
+
 def _study_authorization_context(
     row: dict[str, Any],
     jwt_actors: list[str],
@@ -135,25 +160,72 @@ def _study_authorization_context(
     """When study is active, authorize using the selected CRO/sponsor/SMO org role."""
     if "study" not in jwt_actors:
         return None
-    slug = _active_org_role_slug()
+    slug = _resolve_org_role_slug(row, _active_org_role_slug(), _STUDY_PREFIXES)
     if not slug:
-        for candidate in row.get("roles") or []:
-            text = str(candidate).strip()
-            if text.partition(".")[0] in _STUDY_TENANT_TYPES:
-                slug = text
-                break
-    if not slug or "." not in slug:
         return None
-    tenant_type, _, short = slug.partition(".")
-    if tenant_type not in _STUDY_TENANT_TYPES or not short:
+    return _org_role_context_from_slug(slug, _STUDY_TENANT_TYPES)
+
+
+def _operator_authorization_context(
+    row: dict[str, Any],
+    jwt_actors: list[str],
+) -> tuple[str, list[str]] | None:
+    """When operator is active, authorize using the selected platform org role."""
+    if "operator" not in jwt_actors:
         return None
-    return tenant_type, [short]
+    slug = _resolve_org_role_slug(row, _active_org_role_slug(), (_PLATFORM_PREFIX,))
+    if not slug:
+        return None
+    return _org_role_context_from_slug(slug, frozenset({"platform"}))
+
+
+def _site_authorization_context(
+    row: dict[str, Any],
+    jwt_actors: list[str],
+) -> tuple[str, list[str]] | None:
+    """When clinician is active, authorize using the selected site org role."""
+    if "clinician" not in jwt_actors:
+        return None
+    slug = _resolve_org_role_slug(row, _active_org_role_slug(), (_SITE_PREFIX,))
+    if not slug:
+        return None
+    return _org_role_context_from_slug(slug, frozenset({"site"}))
+
+
+def _patient_authorization_context(
+    row: dict[str, Any],
+    jwt_actors: list[str],
+) -> tuple[str, list[str]] | None:
+    """When patient is active, authorize using the selected patient org role."""
+    if "patient" not in jwt_actors:
+        return None
+    slug = _resolve_org_role_slug(row, _active_org_role_slug(), (_PATIENT_PREFIX,))
+    if not slug:
+        return None
+    return _org_role_context_from_slug(slug, frozenset({"patient"}))
+
+
+def _session_org_role_context(
+    row: dict[str, Any],
+    jwt_actors: list[str],
+) -> tuple[str, list[str]] | None:
+    """Map the active Tier-1 actor + org role to Cedar tenantType and short role names."""
+    for builder in (
+        _study_authorization_context,
+        _operator_authorization_context,
+        _site_authorization_context,
+        _patient_authorization_context,
+    ):
+        ctx = builder(row, jwt_actors)
+        if ctx:
+            return ctx
+    return None
 
 
 def _tenant_type(row: dict[str, Any], claims: dict[str, Any]) -> str:
-    study_ctx = _study_authorization_context(row, _jwt_active_actors(claims))
-    if study_ctx:
-        return study_ctx[0]
+    session_ctx = _session_org_role_context(row, _jwt_active_actors(claims))
+    if session_ctx:
+        return session_ctx[0]
     for slug in row.get("roles") or []:
         if "." in slug:
             return slug.split(".", 1)[0]
@@ -170,9 +242,9 @@ def _roles_for_cedar(
     prefer_row_roles: bool = False,
 ) -> list[str]:
     jwt_actors = _jwt_active_actors(claims)
-    study_ctx = _study_authorization_context(row, jwt_actors)
-    if study_ctx:
-        return study_ctx[1]
+    session_ctx = _session_org_role_context(row, jwt_actors)
+    if session_ctx:
+        return session_ctx[1]
     tenant_type = _tenant_type(row, claims)
     if prefer_row_roles:
         return role_short_names(list(row.get("roles") or []), tenant_type)
@@ -208,8 +280,23 @@ def _principal_from_claims(claims: dict[str, Any]) -> dict[str, Any]:
     sub = str(claims["sub"])
     jwt_actors = _jwt_active_actors(claims)
     tenant_uuid = claims.get(_jwt_claim("tenant_uuid")) or ""
-    tenant_type = str(claims.get(_jwt_claim("tenant_type")) or "platform")
-    roles = role_short_names(_jwt_list(claims, _jwt_claim("roles")), tenant_type)
+    slug = _active_org_role_slug()
+    if slug and "." in slug:
+        inferred_type, _, short = slug.partition(".")
+        if short and (
+            ("operator" in jwt_actors and inferred_type == "platform")
+            or ("clinician" in jwt_actors and inferred_type == "site")
+            or ("patient" in jwt_actors and inferred_type == "patient")
+            or ("study" in jwt_actors and inferred_type in _STUDY_TENANT_TYPES)
+        ):
+            tenant_type = inferred_type
+            roles = [short]
+        else:
+            tenant_type = str(claims.get(_jwt_claim("tenant_type")) or "platform")
+            roles = role_short_names(_jwt_list(claims, _jwt_claim("roles")), tenant_type)
+    else:
+        tenant_type = str(claims.get(_jwt_claim("tenant_type")) or "platform")
+        roles = role_short_names(_jwt_list(claims, _jwt_claim("roles")), tenant_type)
     return build_entity_payload(
         f"{NAMESPACE}::User",
         sub,

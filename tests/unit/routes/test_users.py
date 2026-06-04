@@ -260,6 +260,38 @@ def test_list_users_returns_paginated_items(mock_session, mock_get_principal, cl
 
 @patch("src.services.user_service.get_user_or_404")
 @patch("src.routes.users.SessionLocal")
+def test_list_users_platform_admin_with_mixed_registry_roles(
+    mock_session, mock_get_principal, client, rsa_keypair
+):
+    mixed_row = {
+        **_sample_user(),
+        "roles": ["site.clinical", "platform.admin", "patient.self"],
+    }
+    mock_get_principal.return_value = mixed_row
+    mock_db = MagicMock()
+    mock_session.return_value.__enter__.return_value = mock_db
+    with patch("src.services.user_service.list_users", return_value=([_sample_user()], 2)):
+        token = _token(
+            rsa_keypair,
+            sub=USER,
+            actors=["operator"],
+            tenant_type="platform",
+            roles=["admin"],
+        )
+        response = client.get(
+            "/api/v1/users",
+            headers={
+                "Authorization": f"Bearer {token}",
+                **OPERATOR_HEADERS,
+                "X-Active-Org-Role": "platform.admin",
+            },
+        )
+    assert response.status_code == 200
+    assert response.json["total"] == 2
+
+
+@patch("src.services.user_service.get_user_or_404")
+@patch("src.routes.users.SessionLocal")
 def test_get_user_self_allowed(mock_session, mock_get_user, client, rsa_keypair):
     row = _sample_user()
     mock_get_user.return_value = row
