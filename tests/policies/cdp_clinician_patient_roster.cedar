@@ -1,5 +1,5 @@
 // CDP product policy — clinician supervised patient roster (enroll + profile edit).
-// Canonical copy: cdp/policies/service-overrides/user/cdp_clinician_patient_roster.cedar
+// Canonical copy: cdp/policies/service-overrides/user/ (published as cdp-user-policies)
 // Packed into unit-test policy dir by tests/conftest.py (CI has no sibling cdp repo).
 
 permit (

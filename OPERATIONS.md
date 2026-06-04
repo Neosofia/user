@@ -84,7 +84,7 @@ Run migrations via a one-off migrate container or `uv run alembic upgrade head` 
 
 Shared JWT, JWKS, CORS, healthcheck, and PaaS networking guidance live in the infrastructure **public-cloud** operations guide in your deployment repo.
 
-**CDP deployments** must run the **`ghcr.io/neosofia/cdp-user`** image built from the CDP repo (`deploy/user/Dockerfile`), not this service image alone. The CDP image layers product Cedar overrides on top of `ghcr.io/neosofia/user`. See [CDP OPERATIONS — User service runtime](https://github.com/Neosofia/cdp/blob/main/OPERATIONS.md#user-service-runtime-cdp-cedar-overrides).
+**CDP deployments** use this service image (`ghcr.io/neosofia/user`). Product Cedar overrides are published by CDP as `ghcr.io/neosofia/cdp-user-policies` and merged in this Dockerfile at build time (same pattern as capabilities + `cdp-ui-policies`). See [CDP OPERATIONS — User service policy overrides](https://github.com/Neosofia/cdp/blob/main/OPERATIONS.md#user-service-policy-overrides).
 
 **Service-specific notes:**
 

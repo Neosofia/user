@@ -11,6 +11,16 @@ from testcontainers.postgres import PostgresContainer
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 IMAGE_TAG = "user-service-test:latest"
+POLICY_IMAGE_TAG = "cdp-user-policies:test"
+
+
+def _policy_bundle_context(repo_root: str) -> str:
+    cdp_overrides = os.path.join(
+        repo_root, "..", "cdp", "policies", "service-overrides", "user"
+    )
+    if os.path.isdir(cdp_overrides):
+        return os.path.abspath(cdp_overrides)
+    return os.path.join(repo_root, "tests", "policies")
 
 
 def _normalize_to_psycopg_sqlalchemy_url(url: str) -> str:
@@ -35,10 +45,27 @@ def _normalize_to_psycopg_conn_url(url: str) -> str:
 
 @pytest.fixture(scope="session", autouse=True)
 def build_container_image():
-    """Build the Docker image once per test session."""
+    """Build policy bundle and runtime images once per test session."""
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    policy_context = _policy_bundle_context(repo_root)
     subprocess.run(
-        ["docker", "build", "--target", "runtime", "-t", IMAGE_TAG, "."],
+        ["docker", "build", "-f", "Dockerfile", "-t", POLICY_IMAGE_TAG, "."],
+        cwd=policy_context,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        [
+            "docker",
+            "build",
+            "--target",
+            "runtime",
+            "--build-arg",
+            f"CDP_USER_POLICIES_IMAGE={POLICY_IMAGE_TAG}",
+            "-t",
+            IMAGE_TAG,
+            ".",
+        ],
         cwd=repo_root,
         check=True,
         stdout=subprocess.DEVNULL,

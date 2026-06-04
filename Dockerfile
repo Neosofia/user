@@ -2,9 +2,15 @@
 # Build this from the service directory:
 #   docker build --target test .
 #   docker build --target runtime -t user:test .
+#
+# CDP product Cedar overrides are copied at build time from a published policy bundle
+# (same pattern as capabilities + cdp-ui-policies). CDP publishes the bundle only;
+# this service owns the runtime image.
 
 # cedarpy 4.8.1 needs the glibc manylinux wheel for attribute-based policy evaluation.
 ARG PYTHON_IMAGE=python:3.14-slim@sha256:c845af9399020c7e562969a13689e929074a10fd057acd1b1fad06a2fb068e97
+ARG CDP_USER_POLICIES_IMAGE=ghcr.io/neosofia/cdp-user-policies:v0.1.0
+FROM ${CDP_USER_POLICIES_IMAGE} AS cdp_user_policies
 
 # SQL audit templates (same pattern as authentication)
 FROM ghcr.io/neosofia/sql-template:v0.6.0 AS audit-templates
@@ -39,6 +45,7 @@ COPY src ./src
 COPY tests ./tests
 COPY roles ./roles
 COPY policies ./policies
+COPY --from=cdp_user_policies /policies/ ./policies/
 COPY openapi.json ./openapi.json
 
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -66,6 +73,7 @@ COPY alembic.ini ./alembic.ini
 COPY src ./src
 COPY roles ./roles
 COPY policies ./policies
+COPY --from=cdp_user_policies /policies/ ./policies/
 COPY openapi.json ./openapi.json
 
 # Audit SQL applied by Alembic migration 000
