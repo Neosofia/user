@@ -14,13 +14,13 @@ IMAGE_TAG = "user-service-test:latest"
 POLICY_IMAGE_TAG = "cdp-user-policies:test"
 
 
-def _policy_bundle_context(repo_root: str) -> str:
-    cdp_overrides = os.path.join(
-        repo_root, "..", "cdp", "policies", "service-overrides", "user"
-    )
-    if os.path.isdir(cdp_overrides):
-        return os.path.abspath(cdp_overrides)
-    return os.path.join(repo_root, "tests", "policies")
+def _policy_bundle_build(repo_root: str) -> tuple[str, str]:
+    """Return (build context, Dockerfile path) for the CDP user policy bundle."""
+    cdp_root = os.path.abspath(os.path.join(repo_root, "..", "cdp"))
+    dockerfile = os.path.join("policies", "service-overrides", "user", "Dockerfile")
+    if os.path.isfile(os.path.join(cdp_root, dockerfile)):
+        return cdp_root, dockerfile
+    return os.path.join(repo_root, "tests", "policies"), "Dockerfile"
 
 
 def _normalize_to_psycopg_sqlalchemy_url(url: str) -> str:
@@ -47,9 +47,9 @@ def _normalize_to_psycopg_conn_url(url: str) -> str:
 def build_container_image():
     """Build policy bundle and runtime images once per test session."""
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    policy_context = _policy_bundle_context(repo_root)
+    policy_context, policy_dockerfile = _policy_bundle_build(repo_root)
     subprocess.run(
-        ["docker", "build", "-f", "Dockerfile", "-t", POLICY_IMAGE_TAG, "."],
+        ["docker", "build", "-f", policy_dockerfile, "-t", POLICY_IMAGE_TAG, "."],
         cwd=policy_context,
         check=True,
         stdout=subprocess.DEVNULL,

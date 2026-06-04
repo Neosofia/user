@@ -2,6 +2,35 @@
 
 Per-version instructions for system administrators: prerequisites, deploy and configuration steps, post-deploy verification, and evidence to capture. For what changed in each release, see [CHANGELOG.md](CHANGELOG.md) when present, or the GitHub release for that tag.
 
+## user v0.6.8
+
+**Build identifiers:** Tag `user/v0.6.8`; **cdp-user-policies v0.2.1** (CDP stacks).
+
+**Prerequisites:**
+
+- Publish **cdp-user-policies v0.2.1** (bundles `cdp-overlay.json` for role catalog defaults).
+- Authentication **service registry** entry for `user` uses an **HTTPS** `base_url` (not plain HTTP internal mesh URLs).
+
+**Pre-deploy:**
+
+- Pin `CDP_USER_POLICIES_IMAGE=ghcr.io/neosofia/cdp-user-policies:v0.2.1` at user image build (default in Dockerfile for this tag).
+- CDP deployments: set `ROLE_CATALOG_OVERLAY=/app/policies/cdp-overlay.json` on the user service (file is copied from the policy bundle at build time).
+
+**Deploy:**
+
+1. Rebuild and deploy **user v0.6.8**.
+2. Confirm Authentication `services.base_url` for slug `user` is HTTPS.
+
+**Post-deploy verification:**
+
+1. `GET /health` reports **0.6.8**.
+2. Log in as a multi-actor demo user; provision assigns default tier-2 roles (`site.clinical`, `patient.self`, etc.) and the session picker lists them.
+
+**Evidence:**
+
+- Auth log line `user_provisioning_succeeded` (not `status_code=302`) on login.
+- `GET /api/v1/users/{self}` returns non-empty `roles` after first login.
+
 ## user v0.4.0 (ADR-0014 tenant types and roles)
 
 **Build identifiers:** Tag `user/v0.4.0` (or current line on this branch); **authentication v0.31.2+** for human token claims used by Cedar and the CDP UI.
