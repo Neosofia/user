@@ -145,7 +145,9 @@ def test_container_health(app_container):
         try:
             res = requests.get(f"{app_container['base_url']}/health", timeout=1)
             if res.status_code == 200:
-                assert res.json() == {"status": "ok"}
+                body = res.json()
+                assert body["status"] == "ok"
+                assert body.get("version")
                 return
         except requests.exceptions.RequestException:
             pass

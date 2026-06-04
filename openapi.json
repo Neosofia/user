@@ -14,8 +14,14 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "status": { "type": "string" } },
-                  "required": ["status"]
+                  "properties": {
+                    "status": { "type": "string", "enum": ["ok"] },
+                    "version": {
+                      "type": "string",
+                      "description": "Service semver from pyproject at install/build time."
+                    }
+                  },
+                  "required": ["status", "version"]
                 }
               }
             }

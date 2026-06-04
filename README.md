@@ -94,6 +94,7 @@ Recovery timing and episode lifecycle are **Tier 3 state** (e.g. Care Episode). 
 ## Operations and security
 
 - Run, test, migrate, and deploy: **[OPERATIONS.md](OPERATIONS.md)**
+- Per-release operator steps and verification: **[INSTALLATION_PLAN.md](INSTALLATION_PLAN.md)**
 - Threat model, authz boundaries, and logging rules: **[SECURITY.md](SECURITY.md)**
 - Stage 2 scope and API contract: **`cdp/specs/018-user-service.md`**
 
