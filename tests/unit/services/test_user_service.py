@@ -243,6 +243,29 @@ def test_provision_user_identity_updates_identity_only():
     assert result["roles"] == ["platform.admin"]
 
 
+@patch("src.domain.role_catalog.merge_provision_default_roles")
+def test_provision_user_identity_backfills_default_roles_on_login(merge_defaults):
+    merge_defaults.return_value = ["site.clinical", "patient.self"]
+    mock_db = MagicMock()
+    row = _user_row(roles=[])
+    mock_db.get.return_value = row
+    mock_db.scalar.return_value = 1
+
+    result, created = user_service.provision_user_identity(
+        mock_db,
+        str(USER_ID),
+        _provision_payload(actors=["clinician", "patient"]),
+    )
+
+    assert created is False
+    assert row.roles == ["site.clinical", "patient.self"]
+    assert result["roles"] == ["site.clinical", "patient.self"]
+    merge_defaults.assert_called_once_with(
+        ["clinician", "patient"],
+        [],
+    )
+
+
 def test_provision_user_identity_integrity_conflict():
     mock_db = MagicMock()
     row = _user_row()

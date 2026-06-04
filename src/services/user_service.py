@@ -176,6 +176,17 @@ def _bootstrap_platform_admin_roles(db, payload: dict) -> list[str]:
     return [PLATFORM_ADMIN_ROLE]
 
 
+def _provision_roles(db, payload: dict, existing_roles: list[str] | None) -> list[str]:
+    from src.domain.role_catalog import merge_provision_default_roles
+
+    actors = _actors(payload)
+    roles = merge_provision_default_roles(actors, list(existing_roles or []))
+    if roles:
+        return roles
+    bootstrap = _bootstrap_platform_admin_roles(db, payload)
+    return bootstrap
+
+
 def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bool]:
     target_id = _uuid.UUID(str(user_uuid))
     tenant_id = _uuid.UUID(str(payload["tenant_uuid"]))
@@ -197,8 +208,8 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
     }
 
     if created:
-        roles = _bootstrap_platform_admin_roles(db, payload)
-        if roles:
+        roles = _provision_roles(db, payload, None)
+        if roles == [PLATFORM_ADMIN_ROLE] and TIER1_OPERATOR_ROLE in _actors(payload):
             log_event("first_operator_bootstrapped")
         row = User(
             uuid=target_id,
@@ -211,6 +222,9 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
     else:
         for field, value in values.items():
             setattr(row, field, value)
+        merged_roles = _provision_roles(db, payload, list(row.roles or []))
+        if merged_roles != list(row.roles or []):
+            row.roles = merged_roles
         row.changed_by_uuid = SYSTEM_ACTOR_UUID
         row.changed_by_type = SERVICE_ACTOR_TYPE
 

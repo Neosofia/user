@@ -43,6 +43,7 @@ class RoleCatalog:
     tenant_types: dict[str, frozenset[str]]
     assigner_actors: dict[str, tuple[str, ...]]
     role_labels: dict[str, str]
+    default_roles_by_actor: dict[str, str]
 
 
 def _default_role_label(role_id: str) -> str:
@@ -63,6 +64,34 @@ def _role_id(value: object) -> str:
     if tenant_type not in VALID_TENANT_TYPES or not org_role:
         raise ValueError(f"invalid org role id: {value!r}")
     return role_id
+
+
+def _default_roles_by_actor(
+    raw: object,
+    source: Path,
+    *,
+    role_ids_set: frozenset[str],
+    assigner_prefixes: dict[str, tuple[str, ...]],
+) -> dict[str, str]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{source} default_roles_by_actor must be an object")
+    defaults: dict[str, str] = {}
+    for actor, raw_role in raw.items():
+        actor_key = str(actor).strip()
+        validate_actor(actor_key)
+        role_id = _role_id(raw_role)
+        if role_id not in role_ids_set:
+            raise ValueError(f"default_roles_by_actor.{actor_key} is not in roles list")
+        prefixes = assigner_prefixes.get(actor_key, ())
+        if not prefixes or not any(role_id.startswith(prefix) for prefix in prefixes):
+            raise ValueError(
+                f"default_roles_by_actor.{actor_key} must use a tenant type "
+                f"allowed for that actor"
+            )
+        defaults[actor_key] = role_id
+    return defaults
 
 
 def _prefixes(value: object, actor: str) -> tuple[str, ...]:
@@ -139,11 +168,18 @@ def _catalog_from_mapping(data: dict[str, Any], source: Path) -> RoleCatalog:
         actor_key = str(actor).strip()
         validate_actor(actor_key)
         prefixes[actor_key] = _prefixes(raw_value, actor_key)
+    default_roles = _default_roles_by_actor(
+        data.get("default_roles_by_actor"),
+        source,
+        role_ids_set=roles,
+        assigner_prefixes=prefixes,
+    )
     return RoleCatalog(
         role_ids=roles,
         tenant_types=tenant_types,
         assigner_actors=prefixes,
         role_labels=role_labels,
+        default_roles_by_actor=default_roles,
     )
 
 
@@ -171,11 +207,14 @@ def merge_catalogs(default: RoleCatalog, overlay: RoleCatalog | None) -> RoleCat
                 existing.append(prefix)
     role_labels = dict(default.role_labels)
     role_labels.update(overlay.role_labels)
+    default_roles = dict(default.default_roles_by_actor)
+    default_roles.update(overlay.default_roles_by_actor)
     return RoleCatalog(
         role_ids=frozenset(default.role_ids | overlay.role_ids),
         tenant_types=tenant_types,
         assigner_actors={actor: tuple(values) for actor, values in prefixes.items()},
         role_labels=role_labels,
+        default_roles_by_actor=default_roles,
     )
 
 
@@ -197,6 +236,34 @@ def tenant_type_roles() -> dict[str, frozenset[str]]:
 
 def assigner_actors() -> dict[str, tuple[str, ...]]:
     return role_catalog().assigner_actors
+
+
+def default_roles_by_actor() -> dict[str, str]:
+    return role_catalog().default_roles_by_actor
+
+
+def actor_has_assigned_role(actor: str, roles: list[str]) -> bool:
+    prefixes = assigner_actors().get(actor, ())
+    if not prefixes:
+        return False
+    return any(any(role.startswith(prefix) for prefix in prefixes) for role in roles)
+
+
+def merge_provision_default_roles(actors: list[str], current_roles: list[str]) -> list[str]:
+    """Add catalog default org roles for Tier-1 actors not yet covered (additive only)."""
+    defaults = default_roles_by_actor()
+    if not defaults:
+        return list(current_roles)
+    merged = list(current_roles)
+    seen = set(merged)
+    for actor in actors:
+        if actor not in defaults or actor_has_assigned_role(actor, merged):
+            continue
+        slug = defaults[actor]
+        if slug in role_ids() and slug not in seen:
+            merged.append(slug)
+            seen.add(slug)
+    return merged
 
 
 def role_labels() -> dict[str, str]:

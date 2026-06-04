@@ -135,6 +135,87 @@ def test_role_short_names_strips_tenant_prefix():
     ]
 
 
+def test_default_roles_by_actor_validates_prefix(tmp_path):
+    path = tmp_path / "roles.json"
+    path.write_text(
+        """
+        {
+          "tenant_types": {
+            "site": { "roles": ["clinical"] },
+            "patient": { "roles": ["self"] }
+          },
+          "roles": ["site.clinical", "patient.self"],
+          "assigner_actors": {
+            "clinician": ["site."],
+            "patient": ["patient."]
+          },
+          "default_roles_by_actor": {
+            "clinician": "patient.self"
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="default_roles_by_actor.clinician"):
+        load_catalog_file(path)
+
+
+def test_merge_provision_default_roles_additive(monkeypatch):
+    from src.domain import role_catalog as rc
+    from src.domain.role_catalog import RoleCatalog, merge_provision_default_roles
+
+    catalog = RoleCatalog(
+        role_ids=frozenset({"site.clinical", "patient.self"}),
+        tenant_types={
+            "site": frozenset({"clinical"}),
+            "patient": frozenset({"self"}),
+        },
+        assigner_actors={
+            "clinician": ("site.",),
+            "patient": ("patient.",),
+        },
+        role_labels={
+            "site.clinical": "Site Clinical",
+            "patient.self": "Patient",
+        },
+        default_roles_by_actor={
+            "clinician": "site.clinical",
+            "patient": "patient.self",
+        },
+    )
+    monkeypatch.setattr(rc, "role_catalog", lambda: catalog)
+
+    assert merge_provision_default_roles(
+        ["clinician", "patient"],
+        [],
+    ) == ["site.clinical", "patient.self"]
+    assert merge_provision_default_roles(
+        ["clinician", "patient"],
+        ["site.clinical"],
+    ) == ["site.clinical", "patient.self"]
+
+
+def test_catalog_overlay_merges_default_roles(tmp_path):
+    overlay_path = tmp_path / "roles.json"
+    overlay_path.write_text(
+        """
+        {
+          "tenant_types": {
+            "site": { "roles": ["clinical"] }
+          },
+          "roles": ["site.clinical"],
+          "assigner_actors": { "clinician": ["site."] },
+          "default_roles_by_actor": {
+            "clinician": "site.clinical"
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    merged = merge_catalogs(role_catalog.role_catalog(), load_catalog_file(overlay_path))
+    assert merged.default_roles_by_actor["clinician"] == "site.clinical"
+
+
 def test_catalog_overlay_merges_roles_and_prefixes(tmp_path):
     overlay_path = tmp_path / "roles.json"
     overlay_path.write_text(
