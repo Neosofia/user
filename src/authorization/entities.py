@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from authorization_in_the_middle.entities import build_entity_payload
+from authorization_in_the_middle.entities import build_entity_payload, entity_uid
 from flask import g, request
 from werkzeug.exceptions import NotFound
 
@@ -358,3 +358,11 @@ def build_role_catalog_entity() -> dict[str, Any]:
 
 def build_user_provisioning_entity() -> dict[str, Any]:
     return build_entity_payload(f"{NAMESPACE}::UserProvisioning", USER_PROVISIONING_ID, {})
+
+
+def user_provisioning_resource_uid() -> str:
+    return entity_uid(f"{NAMESPACE}::UserProvisioning", USER_PROVISIONING_ID)
+
+
+def user_provisioning_entities() -> list[dict[str, Any]]:
+    return [resolve_principal(), build_user_provisioning_entity()]

@@ -2,6 +2,24 @@
 
 Per-version instructions for system administrators: prerequisites, deploy and configuration steps, post-deploy verification, and evidence to capture. For what changed in each release, see [CHANGELOG.md](CHANGELOG.md) when present, or the GitHub release for that tag.
 
+## user v0.7.0
+
+**Build identifiers:** Tag `user/v0.7.0`; SDK **`authorization-in-the-middle/v0.4.23`**; **cdp-user-policies v0.2.1** unchanged.
+
+**Deploy:**
+
+1. Rebuild and deploy **user v0.7.0** (no config changes).
+
+**Post-deploy verification:**
+
+1. `GET /health` reports **0.7.0**.
+2. `GET /api/v1/users` and `GET /api/v1/users/{uuid}` succeed for authorized operator JWTs.
+3. `PUT /api/v1/users/{uuid}` provisioning from authentication still returns **200** or **201**.
+
+**Evidence:**
+
+- Health version **0.7.0**; sample authorized list/read/provision responses.
+
 ## user v0.6.9
 
 **Build identifiers:** Tag `user/v0.6.9`; **cdp-user-policies v0.2.1** unchanged.

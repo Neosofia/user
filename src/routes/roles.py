@@ -2,7 +2,6 @@ from authorization_in_the_middle.security import with_security
 from flask import Blueprint, jsonify
 
 from src.authorization import entities as auth_entities
-from src.bootstrap.capabilities import Capabilities
 from src.bootstrap.config import settings
 from src.domain.role_catalog import (
     actor_classes,
@@ -16,7 +15,7 @@ bp = Blueprint("roles", __name__, url_prefix="/api/v1/roles")
 
 
 @bp.route("", methods=["GET"])
-@with_security(action=Capabilities.ROLE_CATALOG_READ, rate_limit=settings.user_read_rate_limit)
+@with_security(action='Action::"role_catalog:read"', rate_limit=settings.user_read_rate_limit)
 def list_roles():
     actors = auth_entities.principal_actors()
     if not actors:

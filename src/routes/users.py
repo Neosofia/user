@@ -6,7 +6,6 @@ from authorization_in_the_middle.security import with_security
 from flask import Blueprint, jsonify, request
 
 from src.authorization import entities as auth_entities
-from src.bootstrap.capabilities import Capabilities
 from src.bootstrap.config import settings
 from src.bootstrap.logging_config import log_event
 from src.db.engine import SessionLocal
@@ -207,24 +206,13 @@ def _validate_provision_payload(user_uuid: str, data: dict) -> str | None:
     return None
 
 
-def _provision_entities() -> list[dict]:
-    return [
-        auth_entities.resolve_principal(),
-        auth_entities.build_user_provisioning_entity(),
-    ]
-
-
-def _provision_resource() -> str:
-    return f'{auth_entities.NAMESPACE}::UserProvisioning::"{auth_entities.USER_PROVISIONING_ID}"'
-
-
 def init_user_routes(app, cedar_evaluator) -> None:
     app.extensions["cedar_evaluator"] = cedar_evaluator
     app.register_blueprint(bp)
 
 
 @bp.route("", methods=["GET"])
-@with_security(action=Capabilities.USER_LIST, rate_limit=settings.user_read_rate_limit)
+@with_security(rate_limit=settings.user_read_rate_limit)
 def list_users():
     pagination, error = _parse_pagination()
     if error:
@@ -241,7 +229,7 @@ def list_users():
 
 
 @bp.route("", methods=["POST"])
-@with_security(action=Capabilities.USER_CREATE, rate_limit=settings.user_write_rate_limit)
+@with_security(rate_limit=settings.user_write_rate_limit)
 def create_user():
     data = request.get_json(silent=True) or {}
     message = _validate_create_payload(data)
@@ -274,7 +262,6 @@ def create_user():
 
 @bp.route("/<user_uuid>", methods=["GET"])
 @with_security(
-    action=Capabilities.USER_READ,
     rate_limit=settings.user_read_rate_limit,
     resource_loader=lambda user_uuid: user_service.get_user_or_404(user_uuid),
 )
@@ -284,7 +271,6 @@ def get_user(user_uuid: str):
 
 @bp.route("/<user_uuid>", methods=["PATCH"])
 @with_security(
-    action=Capabilities.USER_UPDATE,
     rate_limit=settings.user_write_rate_limit,
     resource_loader=lambda user_uuid: user_service.get_user_or_404(user_uuid),
 )
@@ -334,7 +320,6 @@ def patch_user(user_uuid: str):
 
 @bp.route("/<user_uuid>/audits", methods=["GET"])
 @with_security(
-    action=Capabilities.USER_READ,
     rate_limit=settings.user_read_rate_limit,
     resource_loader=lambda user_uuid: user_service.get_user_or_404(user_uuid),
 )
@@ -360,9 +345,9 @@ def get_user_audits(user_uuid: str):
 
 @bp.route("/<user_uuid>", methods=["PUT"])
 @with_security(
-    action=Capabilities.USER_PROVISION,
-    resource_fn=_provision_resource,
-    entities_fn=_provision_entities,
+    action='Action::"user:provision"',
+    resource_fn=auth_entities.user_provisioning_resource_uid,
+    entities_fn=auth_entities.user_provisioning_entities,
     enforce_active_actor=False,
     rate_limit=settings.user_write_rate_limit,
 )
