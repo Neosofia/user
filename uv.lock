@@ -36,40 +36,44 @@ wheels = [
 
 [[package]]
 name = "authentication-in-the-middle"
-version = "0.9.6"
-source = { url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.6/authentication_in_the_middle-0.9.6-py3-none-any.whl" }
+version = "0.9.8"
+source = { url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.8/authentication_in_the_middle-0.9.8-py3-none-any.whl" }
 dependencies = [
     { name = "cryptography" },
     { name = "flask" },
+    { name = "logenvelope" },
     { name = "pyjwt" },
 ]
 wheels = [
-    { url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.6/authentication_in_the_middle-0.9.6-py3-none-any.whl", hash = "sha256:c8b99d7dcecff5758974ef1a6b280c4d6f0a98305ed893aaf4e949c2c60e05a4" },
+    { url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.8/authentication_in_the_middle-0.9.8-py3-none-any.whl", hash = "sha256:d482a6025698fb1005760911e075672ff5882a39d6685b3d4fcdcab159b75c0d" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=42.0.0" },
     { name = "flask", specifier = ">=3.0.0" },
+    { name = "logenvelope", specifier = ">=0.3.3" },
     { name = "pyjwt", specifier = ">=2.8.0" },
 ]
 
 [[package]]
 name = "authorization-in-the-middle"
-version = "0.4.7"
-source = { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.7/authorization_in_the_middle-0.4.7-py3-none-any.whl" }
+version = "0.4.8"
+source = { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.8/authorization_in_the_middle-0.4.8-py3-none-any.whl" }
 dependencies = [
     { name = "cedarpy" },
     { name = "flask" },
+    { name = "logenvelope" },
 ]
 wheels = [
-    { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.7/authorization_in_the_middle-0.4.7-py3-none-any.whl", hash = "sha256:5ae266ebc84dd32ade57e7570cf45efe07e33b2afc2ce6e6bd23e2fb45088ea4" },
+    { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.8/authorization_in_the_middle-0.4.8-py3-none-any.whl", hash = "sha256:491beb8b03baea45050968a2d8b2e3f203b00d427f2cb900a3d94a1703fc40d6" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "cedarpy", specifier = ">=4.8.0" },
     { name = "flask", specifier = ">=3.0.0" },
+    { name = "logenvelope", specifier = ">=0.3.3" },
 ]
 
 [[package]]
@@ -512,10 +516,10 @@ wheels = [
 
 [[package]]
 name = "logenvelope"
-version = "0.3.0"
-source = { url = "https://github.com/Neosofia/sdk/releases/download/logenvelope-0.3.0/logenvelope-0.3.0-py3-none-any.whl" }
+version = "0.3.3"
+source = { url = "https://github.com/Neosofia/sdk/releases/download/logenvelope/v0.3.3/logenvelope-0.3.3-py3-none-any.whl" }
 wheels = [
-    { url = "https://github.com/Neosofia/sdk/releases/download/logenvelope-0.3.0/logenvelope-0.3.0-py3-none-any.whl", hash = "sha256:91e7b7901f948771049dd4387ba47a4b40ab8f19d249640f0eda0461a5f7f9a6" },
+    { url = "https://github.com/Neosofia/sdk/releases/download/logenvelope/v0.3.3/logenvelope-0.3.3-py3-none-any.whl", hash = "sha256:f35761bcc80ee5e8be8f47ee665fa27b1b0453aa279a19f1ee0911ffefe3ec0b" },
 ]
 
 [[package]]
@@ -980,15 +984,15 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
-    { name = "authentication-in-the-middle", url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.6/authentication_in_the_middle-0.9.6-py3-none-any.whl" },
-    { name = "authorization-in-the-middle", url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.7/authorization_in_the_middle-0.4.7-py3-none-any.whl" },
+    { name = "authentication-in-the-middle", url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.8/authentication_in_the_middle-0.9.8-py3-none-any.whl" },
+    { name = "authorization-in-the-middle", url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.8/authorization_in_the_middle-0.4.8-py3-none-any.whl" },
     { name = "cedarpy", specifier = "==4.8.1" },
     { name = "flask", specifier = ">=3.0.0" },
     { name = "flask-cors", specifier = ">=6.0.2" },
     { name = "flask-limiter", specifier = ">=3.5.0" },
     { name = "flask-talisman", specifier = ">=1.1.0" },
     { name = "gunicorn", specifier = ">=21.2.0" },
-    { name = "logenvelope", url = "https://github.com/Neosofia/sdk/releases/download/logenvelope-0.3.0/logenvelope-0.3.0-py3-none-any.whl" },
+    { name = "logenvelope", url = "https://github.com/Neosofia/sdk/releases/download/logenvelope/v0.3.3/logenvelope-0.3.3-py3-none-any.whl" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
     { name = "pydantic", specifier = ">=2.8.0,<3.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0,<3.0.0" },
