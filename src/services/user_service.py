@@ -75,9 +75,9 @@ def _row_to_dict(row: User) -> dict:
     }
 
 
-def get_user_or_404(user_id: str) -> dict:
+def get_user_or_404(user_uuid: str) -> dict:
     try:
-        user_uuid = _uuid.UUID(str(user_id))
+        user_uuid = _uuid.UUID(str(user_uuid))
     except ValueError as exc:
         raise NotFound() from exc
 

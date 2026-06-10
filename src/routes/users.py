@@ -177,11 +177,11 @@ def _resolve_create_tenant(data: dict) -> tuple[str | None, str | None]:
     return tenant_uuid, None
 
 
-def _validate_provision_payload(user_id: str, data: dict) -> str | None:
+def _validate_provision_payload(user_uuid: str, data: dict) -> str | None:
     try:
-        _uuid.UUID(str(user_id))
+        _uuid.UUID(str(user_uuid))
     except ValueError:
-        return "user_id must be a UUID"
+        return "user_uuid must be a UUID"
     if not isinstance(data, dict) or not data:
         return "body must be a JSON object"
     missing = sorted(_PROVISION_FIELDS - data.keys())
@@ -272,17 +272,25 @@ def create_user():
         return jsonify({"error": "database error"}), 500
 
 
-@bp.route("/<user_id>", methods=["GET"])
-@with_security(action=Capabilities.USER_READ, rate_limit=settings.user_read_rate_limit)
-def get_user(user_id: str):
-    return jsonify(user_service.get_user_or_404(user_id)), 200
+@bp.route("/<user_uuid>", methods=["GET"])
+@with_security(
+    action=Capabilities.USER_READ,
+    rate_limit=settings.user_read_rate_limit,
+    resource_loader=lambda user_uuid: user_service.get_user_or_404(user_uuid),
+)
+def get_user(user_uuid: str):
+    return jsonify(user_service.get_user_or_404(user_uuid)), 200
 
 
-@bp.route("/<user_id>", methods=["PATCH"])
-@with_security(action=Capabilities.USER_UPDATE, rate_limit=settings.user_write_rate_limit)
-def patch_user(user_id: str):
+@bp.route("/<user_uuid>", methods=["PATCH"])
+@with_security(
+    action=Capabilities.USER_UPDATE,
+    rate_limit=settings.user_write_rate_limit,
+    resource_loader=lambda user_uuid: user_service.get_user_or_404(user_uuid),
+)
+def patch_user(user_uuid: str):
     data = request.get_json(silent=True) or {}
-    is_own_user = auth_entities.principal_sub() == user_id
+    is_own_user = auth_entities.principal_sub() == user_uuid
     tos_self_accept = is_own_user and set(data.keys()) == {"tos_accepted"}
     self_service = (
         is_own_user and not auth_entities.principal_is_operator()
@@ -291,7 +299,7 @@ def patch_user(user_id: str):
     target = None
     if not self_service and ("roles" in data or clinician_only):
         try:
-            target = user_service.get_user_or_404(user_id)
+            target = user_service.get_user_or_404(user_uuid)
         except NotFound:
             return jsonify({"error": "not_found"}), 404
     try:
@@ -311,11 +319,11 @@ def patch_user(user_id: str):
             item = user_service.update_user(
                 db,
                 actor,
-                user_id,
+                user_uuid,
                 data,
                 self_service=self_service,
             )
-            log_event("user_updated", actor_uuid=actor, user_uuid=user_id)
+            log_event("user_updated", actor_uuid=actor, user_uuid=user_uuid)
             return jsonify(item), 200
     except user_service.ConflictError as exc:
         return jsonify({"error": "conflict", "message": str(exc)}), 409
@@ -324,18 +332,22 @@ def patch_user(user_id: str):
         return jsonify({"error": "database error"}), 500
 
 
-@bp.route("/<user_id>/audits", methods=["GET"])
-@with_security(action=Capabilities.USER_READ, rate_limit=settings.user_read_rate_limit)
-def get_user_audits(user_id: str):
+@bp.route("/<user_uuid>/audits", methods=["GET"])
+@with_security(
+    action=Capabilities.USER_READ,
+    rate_limit=settings.user_read_rate_limit,
+    resource_loader=lambda user_uuid: user_service.get_user_or_404(user_uuid),
+)
+def get_user_audits(user_uuid: str):
     pagination, error = _parse_pagination()
     if error:
         return error
     page, page_size = pagination
     try:
         with SessionLocal() as db:
-            items, total = user_service.get_user_audits(db, user_id, page, page_size)
+            items, total = user_service.get_user_audits(db, user_uuid, page, page_size)
             return jsonify({
-                "user_uuid": user_id,
+                "user_uuid": user_uuid,
                 "items": items,
                 "total": total,
                 "page": page,
@@ -346,7 +358,7 @@ def get_user_audits(user_id: str):
         return jsonify({"error": "database error"}), 500
 
 
-@bp.route("/<user_id>", methods=["PUT"])
+@bp.route("/<user_uuid>", methods=["PUT"])
 @with_security(
     action=Capabilities.USER_PROVISION,
     resource_fn=_provision_resource,
@@ -354,15 +366,15 @@ def get_user_audits(user_id: str):
     enforce_active_actor=False,
     rate_limit=settings.user_write_rate_limit,
 )
-def provision_user(user_id: str):
+def provision_user(user_uuid: str):
     data = request.get_json(silent=True) or {}
-    message = _validate_provision_payload(user_id, data)
+    message = _validate_provision_payload(user_uuid, data)
     if message:
         return jsonify({"error": "invalid_request", "message": message}), 400
     try:
         with SessionLocal() as db:
-            item, created = user_service.provision_user_identity(db, user_id, data)
-            log_event("user_provisioned", user_uuid=user_id, created=created)
+            item, created = user_service.provision_user_identity(db, user_uuid, data)
+            log_event("user_provisioned", user_uuid=user_uuid, created=created)
             return jsonify(item), 201 if created else 200
     except user_service.ConflictError as exc:
         return jsonify({"error": "conflict", "message": str(exc)}), 409

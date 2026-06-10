@@ -5,11 +5,11 @@ This service authorizes user-registry operations:
 
 | Route | Action | Resource |
 |-------|--------|----------|
-| GET/PATCH /api/v1/users/{user_id} | user:read, user:update | users::User (target row) |
+| GET/PATCH /api/v1/users/{user_uuid} | user:read, user:update | users::User (target row) |
 | GET /api/v1/users | user:list | users::UserCatalog |
 | POST /api/v1/users | user:create | users::UserCatalog |
 | GET /api/v1/roles | role_catalog:read | users::RoleCatalog |
-| PUT /api/v1/users/{user_id} | user:provision | users::UserProvisioning |
+| PUT /api/v1/users/{user_uuid} | user:provision | users::UserProvisioning |
 """
 from __future__ import annotations
 
@@ -326,14 +326,17 @@ def build_service_principal_entity(service_slug: str, claims: dict[str, Any]) ->
 
 
 def build_user_resource_entity(
-    user_id: str,
-    row: dict[str, Any],
+    user_uuid: str,
+    row: dict[str, Any] | None = None,
     claims: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_claims = claims or _claims()
+    if row is None:
+        row = {"uuid": user_uuid, "tenant_uuid": "", "roles": []}
     return build_entity_payload(
         f"{NAMESPACE}::User",
-        user_id,
-        _user_attrs(row, claims or _claims(), prefer_row_roles=True),
+        user_uuid,
+        _user_attrs(row, resolved_claims, prefer_row_roles=True),
     )
 
 

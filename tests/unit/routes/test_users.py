@@ -677,7 +677,7 @@ def test_validate_provision_payload_branch_errors():
         "last_name": "Operator",
         "email": "sam@example.com",
     }
-    assert user_routes._validate_provision_payload("not-a-uuid", valid) == "user_id must be a UUID"
+    assert user_routes._validate_provision_payload("not-a-uuid", valid) == "user_uuid must be a UUID"
     assert "unsupported fields" in user_routes._validate_provision_payload(
         USER,
         {**valid, "roles": []},
