@@ -8,7 +8,7 @@
 # this service owns the runtime image.
 
 # cedarpy 4.8.1 needs the glibc manylinux wheel for attribute-based policy evaluation.
-ARG PYTHON_IMAGE=python:3.14-slim@sha256:c845af9399020c7e562969a13689e929074a10fd057acd1b1fad06a2fb068e97
+ARG PYTHON_IMAGE=python:3.14-slim@sha256:d7a925f9eb9639a93e455b9f12c167569358818c0f62b51b88edbc8fcf34c421
 ARG CDP_USER_POLICIES_IMAGE=ghcr.io/neosofia/cdp-user-policies:v0.2.1
 FROM ${CDP_USER_POLICIES_IMAGE} AS cdp_user_policies
 
