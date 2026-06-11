@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from authorization_in_the_middle.entities import build_entity_payload, entity_uid
+from authorization_in_the_middle.flask_identity import jwt_claim_principal_attributes
 from flask import g, request
 from werkzeug.exceptions import NotFound
 
@@ -277,7 +278,7 @@ def _user_attrs(
 
 def _principal_from_claims(claims: dict[str, Any]) -> dict[str, Any]:
     """Principal for callers authenticated but not yet registered in the user registry."""
-    sub = str(claims["sub"])
+    sub, _, base_attrs = jwt_claim_principal_attributes(claims)
     jwt_actors = _jwt_active_actors(claims)
     tenant_uuid = claims.get(_jwt_claim("tenant_uuid")) or ""
     slug = _active_org_role_slug()
@@ -301,7 +302,7 @@ def _principal_from_claims(claims: dict[str, Any]) -> dict[str, Any]:
         f"{NAMESPACE}::User",
         sub,
         {
-            "uuid": sub,
+            **base_attrs,
             "tenantId": str(tenant_uuid),
             "tenantType": tenant_type,
             "roles": roles,

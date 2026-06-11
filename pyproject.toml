@@ -46,7 +46,7 @@ include = [
 ]
 
 [tool.uv.sources]
-authorization-in-the-middle = { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.23/authorization_in_the_middle-0.4.23-py3-none-any.whl" }
+authorization-in-the-middle = { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.4.26/authorization_in_the_middle-0.4.26-py3-none-any.whl" }
 authentication-in-the-middle = { url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.8/authentication_in_the_middle-0.9.8-py3-none-any.whl" }
 logenvelope = { url = "https://github.com/Neosofia/sdk/releases/download/logenvelope/v0.3.4/logenvelope-0.3.4-py3-none-any.whl" }
 
