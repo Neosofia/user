@@ -1,7 +1,6 @@
 import json
 import pytest
 import base64
-import shutil
 from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -34,40 +33,23 @@ os.environ["MIGRATION_DATABASE_URL"] = "postgresql+psycopg://template:dummy@loca
 _tests_dir = Path(__file__).resolve().parent
 _repo_root = _tests_dir.parent
 _base_policies = _repo_root / "policies"
-_cdp_override = _tests_dir / "policies" / "cdp_clinician_patient_roster.cedar"
-_cdp_packed_policies = _repo_root.parent / "cdp" / "policies-packed" / "user"
 
 
 def _configure_authorization_policies_dir() -> None:
-    if _cdp_packed_policies.is_dir() and any(_cdp_packed_policies.glob("*.cedar")):
-        os.environ["AUTHORIZATION_POLICIES_DIR"] = str(_cdp_packed_policies)
-        return
-    packed = _tests_dir / ".packed-policies"
-    packed.mkdir(parents=True, exist_ok=True)
-    for src in _base_policies.glob("*.cedar"):
-        shutil.copy2(src, packed / src.name)
-    if _cdp_override.is_file():
-        shutil.copy2(_cdp_override, packed / _cdp_override.name)
-    os.environ["AUTHORIZATION_POLICIES_DIR"] = str(packed)
+    os.environ["AUTHORIZATION_POLICIES_DIR"] = str(_base_policies)
 
 
 _configure_authorization_policies_dir()
 
 from src.app import create_app  # noqa: E402 — must import after env vars are set
 
-_TIER1_ACTORS = frozenset({"operator", "study", "clinician", "patient"})
-
-from src.domain.role_catalog import init_actor_classes  # noqa: E402
-
-init_actor_classes(_TIER1_ACTORS)
+_TIER1_ACTORS = frozenset({"operator", "study", "clinician", "patient", "demo"})
 
 
 @pytest.fixture(autouse=True)
 def _tier1_actor_classes_for_unit_tests():
-    """Module-level ``app = create_app()`` must not leave catalog actors empty between tests."""
-    init_actor_classes(_TIER1_ACTORS)
+    """No-op: tier-1 actors come from app config via ``configure_tier1_actor_classes``."""
     yield
-    init_actor_classes(_TIER1_ACTORS)
 
 
 @pytest.fixture(scope="session")

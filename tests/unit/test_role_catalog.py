@@ -1,41 +1,14 @@
 import pytest
 
-from src.domain import role_catalog
-from src.domain.role_catalog import (
-    assigner_actors_from_jwt,
+from src.services import role_catalog as role_catalog_module
+from src.services.role_catalog import (
     load_catalog_file,
     merge_catalogs,
     role_ids,
-    role_short_names,
-    roles_for_actor,
-    roles_for_actors,
     validate_roles,
-    validate_roles_for_assigner_actors,
-    validate_actor,
 )
 
 pytestmark = pytest.mark.unit
-
-
-def test_validate_actor_accepts_actor_values():
-    validate_actor("operator")
-
-
-def test_validate_actor_rejects_unknown():
-    with pytest.raises(ValueError, match="actor role"):
-        validate_actor("admin")
-
-
-def test_assigner_actors_from_jwt_dedupes_and_filters():
-    assert assigner_actors_from_jwt(["operator", "clinician", "operator"]) == [
-        "operator",
-        "clinician",
-    ]
-
-
-def test_assigner_actors_from_jwt_requires_actor():
-    with pytest.raises(ValueError, match="at least one Tier-1 role"):
-        assigner_actors_from_jwt(["admin"])
 
 
 def test_validate_roles_accepts_catalog_slugs():
@@ -45,55 +18,6 @@ def test_validate_roles_accepts_catalog_slugs():
 def test_validate_roles_rejects_unknown():
     with pytest.raises(ValueError, match="unknown roles"):
         validate_roles(["clinical.license.rn"])
-
-
-def test_validate_roles_for_assigner_actors_operator_namespace():
-    validate_roles_for_assigner_actors(["platform.audit"], ["operator"])
-    with pytest.raises(ValueError, match="disallowed"):
-        validate_roles_for_assigner_actors(["site.clinical"], ["operator"])
-
-
-def test_validate_roles_for_assigner_actors_study_namespace():
-    validate_roles_for_assigner_actors(["cro.clinical-ops"], ["study"])
-    with pytest.raises(ValueError, match="disallowed"):
-        validate_roles_for_assigner_actors(["platform.audit"], ["study"])
-
-
-def test_validate_roles_for_assigner_actors_union():
-    validate_roles_for_assigner_actors(
-        ["platform.audit", "site.clinical"],
-        ["operator", "clinician"],
-    )
-    with pytest.raises(ValueError, match="disallowed"):
-        validate_roles_for_assigner_actors(["patient.self"], ["operator"])
-
-
-def test_validate_roles_for_assigner_allows_cross_tenant_type_slugs():
-    """Platform-tenant users may hold org roles from multiple tenant-type namespaces."""
-    roles = [
-        "platform.admin",
-        "cro.clinical-ops",
-        "patient.self",
-        "site.clinical",
-        "smo.readonly",
-    ]
-    validate_roles_for_assigner_actors(roles, ["operator", "study", "clinician", "patient"])
-
-    with pytest.raises(ValueError, match="disallowed"):
-        validate_roles_for_assigner_actors(["cro.clinical-ops"], ["operator"])
-
-
-def test_roles_for_actors_union():
-    roles = roles_for_actors(["operator", "clinician"])
-    assert "platform.admin" in roles
-    assert "site.clinical" in roles
-    assert "patient.self" not in roles
-
-
-def test_roles_for_actor_filters_catalog():
-    operator_roles = roles_for_actor("operator")
-    assert "platform.admin" in operator_roles
-    assert "site.clinical" not in operator_roles
 
 
 def test_default_catalog_includes_platform_admin():
@@ -106,12 +30,12 @@ def test_catalog_role_objects_with_labels(tmp_path):
         """
         {
           "tenant_types": {
-            "patient": { "roles": ["self"] }
+            "site": { "roles": ["clinical"] }
           },
           "roles": [
+            "site.clinical",
             { "id": "patient.self", "label": "Patient" }
-          ],
-          "assigner_actors": { "patient": ["patient."] }
+          ]
         }
         """,
         encoding="utf-8",
@@ -121,102 +45,14 @@ def test_catalog_role_objects_with_labels(tmp_path):
 
 
 def test_role_definition_falls_back_to_slug_label():
-    from src.domain.role_catalog import role_definition
+    from src.services.role_catalog import role_definition
 
     entry = role_definition("platform.admin")
     assert entry["id"] == "platform.admin"
     assert entry["label"] == "Admin"
 
 
-def test_role_short_names_strips_tenant_prefix():
-    assert role_short_names(["platform.admin", "platform.audit"], "platform") == [
-        "admin",
-        "audit",
-    ]
-
-
-def test_default_roles_by_actor_validates_prefix(tmp_path):
-    path = tmp_path / "roles.json"
-    path.write_text(
-        """
-        {
-          "tenant_types": {
-            "site": { "roles": ["clinical"] },
-            "patient": { "roles": ["self"] }
-          },
-          "roles": ["site.clinical", "patient.self"],
-          "assigner_actors": {
-            "clinician": ["site."],
-            "patient": ["patient."]
-          },
-          "default_roles_by_actor": {
-            "clinician": "patient.self"
-          }
-        }
-        """,
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="default_roles_by_actor.clinician"):
-        load_catalog_file(path)
-
-
-def test_merge_provision_default_roles_additive(monkeypatch):
-    from src.domain import role_catalog as rc
-    from src.domain.role_catalog import RoleCatalog, merge_provision_default_roles
-
-    catalog = RoleCatalog(
-        role_ids=frozenset({"site.clinical", "patient.self"}),
-        tenant_types={
-            "site": frozenset({"clinical"}),
-            "patient": frozenset({"self"}),
-        },
-        assigner_actors={
-            "clinician": ("site.",),
-            "patient": ("patient.",),
-        },
-        role_labels={
-            "site.clinical": "Site Clinical",
-            "patient.self": "Patient",
-        },
-        default_roles_by_actor={
-            "clinician": "site.clinical",
-            "patient": "patient.self",
-        },
-    )
-    monkeypatch.setattr(rc, "role_catalog", lambda: catalog)
-
-    assert merge_provision_default_roles(
-        ["clinician", "patient"],
-        [],
-    ) == ["site.clinical", "patient.self"]
-    assert merge_provision_default_roles(
-        ["clinician", "patient"],
-        ["site.clinical"],
-    ) == ["site.clinical", "patient.self"]
-
-
-def test_catalog_overlay_merges_default_roles(tmp_path):
-    overlay_path = tmp_path / "roles.json"
-    overlay_path.write_text(
-        """
-        {
-          "tenant_types": {
-            "site": { "roles": ["clinical"] }
-          },
-          "roles": ["site.clinical"],
-          "assigner_actors": { "clinician": ["site."] },
-          "default_roles_by_actor": {
-            "clinician": "site.clinical"
-          }
-        }
-        """,
-        encoding="utf-8",
-    )
-    merged = merge_catalogs(role_catalog.role_catalog(), load_catalog_file(overlay_path))
-    assert merged.default_roles_by_actor["clinician"] == "site.clinical"
-
-
-def test_catalog_overlay_merges_roles_and_prefixes(tmp_path):
+def test_catalog_overlay_merges_roles(tmp_path):
     overlay_path = tmp_path / "roles.json"
     overlay_path.write_text(
         """
@@ -224,18 +60,16 @@ def test_catalog_overlay_merges_roles_and_prefixes(tmp_path):
           "tenant_types": {
             "site": { "roles": ["admin", "research", "clinical", "readonly"] }
           },
-          "roles": ["site.admin"],
-          "assigner_actors": {"clinician": ["site.", "patient."]}
+          "roles": ["site.admin"]
         }
         """,
         encoding="utf-8",
     )
 
-    merged = merge_catalogs(role_catalog.role_catalog(), load_catalog_file(overlay_path))
+    merged = merge_catalogs(role_catalog_module.role_catalog(), load_catalog_file(overlay_path))
 
     assert "site.clinical" in merged.role_ids
     assert "site.admin" in merged.role_ids
-    assert "site." in merged.assigner_actors["clinician"]
 
 
 def test_catalog_file_rejects_non_object_json(tmp_path):
@@ -248,13 +82,13 @@ def test_catalog_file_rejects_non_object_json(tmp_path):
 
 def test_catalog_file_rejects_invalid_shapes(tmp_path):
     path = tmp_path / "roles.json"
-    path.write_text('{"roles": "platform.admin"}', encoding="utf-8")
+    path.write_text(
+        '{"tenant_types": {"platform": {"roles": ["admin"]}}, "roles": "platform.admin"}',
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="roles list"):
         load_catalog_file(path)
 
-    path.write_text(
-        '{"tenant_types": {}, "roles": ["bad role"], "assigner_actors": {}}',
-        encoding="utf-8",
-    )
+    path.write_text('{"tenant_types": {}, "roles": ["bad role"]}', encoding="utf-8")
     with pytest.raises(ValueError, match="invalid org role"):
         load_catalog_file(path)

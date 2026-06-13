@@ -14,6 +14,7 @@ def test_openapi_spec_contains_core_paths():
     assert "/health" in spec["paths"]
     assert "/api/v1/users" in spec["paths"]
     assert "/api/v1/users/{user_uuid}" in spec["paths"]
+    assert "/api/v1/tenants/{tenant_uuid}/users" in spec["paths"]
     assert "/api/v1/roles" in spec["paths"]
 
 

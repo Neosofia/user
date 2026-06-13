@@ -6,6 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from werkzeug.exceptions import NotFound
 
+from authorization_in_the_middle.entities import ID_PLACEHOLDER, is_id_placeholder
+
 from src.bootstrap.logging_config import log_event
 from src.models.user import User, UserHistory
 
@@ -14,13 +16,17 @@ class ConflictError(Exception):
     """Registry write conflict (unique constraint or concurrent upsert)."""
 
 
+# OpenAPI accepts these on PATCH for Cedar ``presentFields`` only — never persisted.
+PATCH_CEDAR_ONLY_FIELDS = frozenset({"uuid", "tenant_uuid", "idp_id", "actor_class"})
+
+
 def _display_code_conflict_message(display_code: str | None) -> str:
     if display_code:
         return (
-            f"Display code {display_code!r} is already assigned to another patient "
-            "in this organization. Use a different code or enroll the existing patient."
+            f"Display code {display_code!r} is already assigned to another user "
+            "in this organization."
         )
-    return "Display code is already in use for another patient in this organization."
+    return "Display code is already in use for another user in this organization."
 
 
 def _integrity_conflict_message(exc: IntegrityError, *, display_code: str | None = None) -> str:
@@ -56,9 +62,6 @@ def _display_code_in_use(
 
 SYSTEM_ACTOR_UUID = _uuid.UUID("00000000-0000-7000-8000-000000000000")
 SERVICE_ACTOR_TYPE = 2
-PLATFORM_ADMIN_ROLE = "platform.admin"
-TIER1_OPERATOR_ROLE = "operator"
-PATIENT_SELF_ROLE = "patient.self"
 
 
 def _row_to_dict(row: User) -> dict:
@@ -90,11 +93,20 @@ def get_user_or_404(user_uuid: str) -> dict:
         return _row_to_dict(row)
 
 
-def list_users(db, page: int, page_size: int, search: str) -> tuple[list[dict], int]:
+def list_users(
+    db,
+    page: int,
+    page_size: int,
+    search: str,
+    *,
+    tenant_uuid: str | None = None,
+) -> tuple[list[dict], int]:
     query = select(User).order_by(
         User.last_name.asc().nulls_last(),
         User.first_name.asc().nulls_last(),
     )
+    if tenant_uuid is not None:
+        query = query.where(User.tenant_uuid == _uuid.UUID(str(tenant_uuid)))
     if search:
         pattern = f"%{search}%"
         query = query.where(
@@ -110,33 +122,26 @@ def list_users(db, page: int, page_size: int, search: str) -> tuple[list[dict], 
     return [_row_to_dict(row) for row in rows], int(total or 0)
 
 
-def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_service: bool) -> dict:
+def update_user(db, actor_uuid: str, user_uuid: str, payload: dict) -> dict:
     actor_id = _uuid.UUID(str(actor_uuid))
     target_id = _uuid.UUID(str(user_uuid))
     row = db.get(User, target_id)
     if row is None:
         raise NotFound()
 
-    if self_service:
-        for field in ("first_name", "last_name", "email"):
-            if field in payload:
-                value = (payload.get(field) or "").strip() or None
-                setattr(row, field, value)
-        if "tos_accepted" in payload:
-            if payload.get("tos_accepted") is True:
-                row.tos_accepted = True
-    else:
-        field_map = {
-            "tenant_uuid": lambda v: _uuid.UUID(str(v)),
-            "display_code": lambda v: (str(v).strip() or None) if v is not None else None,
-            "first_name": lambda v: (str(v).strip() or None) if v is not None else None,
-            "last_name": lambda v: (str(v).strip() or None) if v is not None else None,
-            "email": lambda v: (str(v).strip() or None) if v is not None else None,
-            "roles": lambda v: list(v or []),
-        }
-        for field, transform in field_map.items():
-            if field in payload:
-                setattr(row, field, transform(payload[field]))
+    field_map = {
+        "tenant_uuid": lambda v: _uuid.UUID(str(v)),
+        "display_code": lambda v: (str(v).strip() or None) if v is not None else None,
+        "first_name": lambda v: (str(v).strip() or None) if v is not None else None,
+        "last_name": lambda v: (str(v).strip() or None) if v is not None else None,
+        "email": lambda v: (str(v).strip() or None) if v is not None else None,
+        "roles": lambda v: list(v or []),
+    }
+    for field, transform in field_map.items():
+        if field in payload:
+            setattr(row, field, transform(payload[field]))
+    if "tos_accepted" in payload and payload.get("tos_accepted") is True:
+        row.tos_accepted = True
 
     row.changed_by_uuid = actor_id
     row.changed_by_type = 1
@@ -148,43 +153,6 @@ def update_user(db, actor_uuid: str, user_uuid: str, payload: dict, *, self_serv
         raise ConflictError(_integrity_conflict_message(exc, display_code=display_code)) from exc
     db.refresh(row)
     return _row_to_dict(row)
-
-
-def _actors(payload: dict) -> list[str]:
-    roles = payload.get("actors")
-    if roles is None:
-        return []
-    if not isinstance(roles, list):
-        return []
-    return [str(role).strip() for role in roles if str(role).strip()]
-
-
-def _active_platform_admin_exists(db) -> bool:
-    count = db.scalar(
-        select(func.count())
-        .select_from(User)
-        .where(User.roles.contains([PLATFORM_ADMIN_ROLE]))
-    )
-    return int(count or 0) > 0
-
-
-def _bootstrap_platform_admin_roles(db, payload: dict) -> list[str]:
-    if TIER1_OPERATOR_ROLE not in _actors(payload):
-        return []
-    if _active_platform_admin_exists(db):
-        return []
-    return [PLATFORM_ADMIN_ROLE]
-
-
-def _provision_roles(db, payload: dict, existing_roles: list[str] | None) -> list[str]:
-    from src.domain.role_catalog import merge_provision_default_roles
-
-    actors = _actors(payload)
-    roles = merge_provision_default_roles(actors, list(existing_roles or []))
-    if roles:
-        return roles
-    bootstrap = _bootstrap_platform_admin_roles(db, payload)
-    return bootstrap
 
 
 def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bool]:
@@ -208,12 +176,9 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
     }
 
     if created:
-        roles = _provision_roles(db, payload, None)
-        if roles == [PLATFORM_ADMIN_ROLE] and TIER1_OPERATOR_ROLE in _actors(payload):
-            log_event("first_operator_bootstrapped")
         row = User(
             uuid=target_id,
-            roles=roles,
+            roles=[],
             changed_by_uuid=SYSTEM_ACTOR_UUID,
             changed_by_type=SERVICE_ACTOR_TYPE,
             **values,
@@ -222,9 +187,6 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
     else:
         for field, value in values.items():
             setattr(row, field, value)
-        merged_roles = _provision_roles(db, payload, list(row.roles or []))
-        if merged_roles != list(row.roles or []):
-            row.roles = merged_roles
         row.changed_by_uuid = SYSTEM_ACTOR_UUID
         row.changed_by_type = SERVICE_ACTOR_TYPE
 
@@ -237,33 +199,93 @@ def provision_user_identity(db, user_uuid: str, payload: dict) -> tuple[dict, bo
     return _row_to_dict(row), created
 
 
-def create_user(db, actor_uuid: str, payload: dict, *, assigner_actor_list: list[str]) -> tuple[dict, bool]:
-    from src.domain.role_catalog import validate_roles_for_assigner_actors
+def plan_create_from_openapi() -> dict:
+    """Normalize OpenAPI-validated body for Cedar and persistence."""
+    from flask import g
+
+    return finalize_create_body(g.planned_body)
+
+
+def plan_patch_from_openapi() -> dict:
+    """Merge validated PATCH onto stored row for Cedar; stash body for persistence."""
+    from flask import g, request
+
+    user_uuid = str(request.view_args["user_uuid"])
+    existing = get_user_or_404(user_uuid)
+    validated = dict(g.validated_body)
+    g.patch_body = {
+        key: value
+        for key, value in validated.items()
+        if key not in PATCH_CEDAR_ONLY_FIELDS
+    }
+    return plan_update_user(validated, existing)
+
+
+def finalize_create_body(body: dict) -> dict:
+    """Mechanical normalization of create body (OpenAPI already validated)."""
+    from src.services.role_catalog import validate_roles
+
+    tenant_uuid = body.get("tenant_uuid")
+    if not tenant_uuid:
+        raise ValueError("tenant_uuid is required")
+    tenant_uuid = str(_uuid.UUID(str(tenant_uuid)))
+
+    roles = list(body.get("roles") or [])
+    if not roles:
+        raise ValueError("roles is required")
+    validate_roles(roles)
+
+    display_code = body.get("display_code")
+    if display_code is not None:
+        display_code = str(display_code).strip() or None
+
+    raw_uuid = body.get("uuid")
+    if raw_uuid and not is_id_placeholder(raw_uuid):
+        planned_uuid = str(_uuid.UUID(str(raw_uuid)))
+    else:
+        planned_uuid = ID_PLACEHOLDER
+
+    planned: dict = {
+        "uuid": planned_uuid,
+        "tenant_uuid": tenant_uuid,
+        "roles": roles,
+        "first_name": str(body.get("first_name", "")).strip(),
+        "last_name": str(body.get("last_name", "")).strip(),
+        "email": str(body.get("email", "")).strip(),
+    }
+    if display_code is not None:
+        planned["display_code"] = display_code
+    return planned
+
+
+def plan_update_user(body: dict, existing: dict) -> dict:
+    """Merge a PATCH body onto the stored row for Cedar authorization."""
+    merged = dict(existing)
+    field_map = {
+        "tenant_uuid": lambda v: str(_uuid.UUID(str(v))),
+        "display_code": lambda v: (str(v).strip() or None) if v is not None else None,
+        "first_name": lambda v: (str(v).strip() or None) if v is not None else None,
+        "last_name": lambda v: (str(v).strip() or None) if v is not None else None,
+        "email": lambda v: (str(v).strip() or None) if v is not None else None,
+        "roles": lambda v: list(v or []),
+        "tos_accepted": lambda v: True if v is True else merged.get("tos_accepted"),
+    }
+    for field, transform in field_map.items():
+        if field in body:
+            merged[field] = transform(body[field])
+    return merged
+
+
+def create_user(db, actor_uuid: str, payload: dict) -> tuple[dict, bool]:
+    from src.services.role_catalog import validate_roles
 
     actor_id = _uuid.UUID(str(actor_uuid))
     tenant_id = _uuid.UUID(str(payload["tenant_uuid"]))
 
     roles = list(payload.get("roles") or [])
-    from src.domain.role_catalog import actor_classes
-
-    actors = [actor for actor in assigner_actor_list if actor in actor_classes()]
-    clinician_only = actors == ["clinician"]
     if not roles:
-        if clinician_only:
-            roles = [PATIENT_SELF_ROLE]
-        else:
-            raise ValueError("roles is required")
-
-    if clinician_only:
-        if set(roles) != {PATIENT_SELF_ROLE}:
-            raise ValueError("clinician enrollment may only assign patient.self to the new patient")
-        if payload.get("uuid") or payload.get("idp_id"):
-            raise ValueError("clinician enrollment may not specify uuid or idp_id")
-    elif payload.get("uuid"):
-        if set(roles) != {PATIENT_SELF_ROLE}:
-            raise ValueError("stable uuid seeding may only assign patient.self")
-    else:
-        validate_roles_for_assigner_actors(roles, assigner_actor_list)
+        raise ValueError("roles is required")
+    validate_roles(roles)
 
     first_name = str(payload["first_name"]).strip()
     last_name = str(payload["last_name"]).strip()
@@ -275,8 +297,9 @@ def create_user(db, actor_uuid: str, payload: dict, *, assigner_actor_list: list
     if display_code is not None:
         display_code = str(display_code).strip() or None
 
-    if payload.get("uuid"):
-        user_uuid = _uuid.UUID(str(payload["uuid"]))
+    raw_uuid = payload.get("uuid")
+    if raw_uuid and not is_id_placeholder(raw_uuid):
+        user_uuid = _uuid.UUID(str(raw_uuid))
     else:
         user_uuid = _uuid.uuid7()
 

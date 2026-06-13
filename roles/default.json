@@ -14,9 +14,6 @@
     },
     "smo": {
       "roles": ["admin", "activation", "readonly"]
-    },
-    "patient": {
-      "roles": ["self", "advocate"]
     }
   },
   "roles": [
@@ -41,11 +38,5 @@
     "smo.readonly",
     "patient.self",
     "patient.advocate"
-  ],
-  "assigner_actors": {
-    "operator": ["platform."],
-    "study": ["cro.", "sponsor.", "smo."],
-    "clinician": ["site."],
-    "patient": ["patient."]
-  }
+  ]
 }

@@ -54,9 +54,9 @@
    curl http://localhost:8018/health
    ```
 
-Protected routes need a platform JWT from the authentication service (`operator` Tier-1 role plus `operator.platform-admin` for list/admin updates; Cedar governs per-user read/update). There is no public user create API. See `openapi.json` for paths.
+Protected routes need a platform JWT from the authentication service (Tier-1 `operator` with `platform.admin` on the registry row for platform list/admin updates; Cedar governs per-user read/update). Clinicians enroll patients via `POST /api/v1/users` when Cedar permits. See `openapi.json` for paths.
 
-Authentication provisions registry rows with `PUT /api/v1/users/{uuid}` using a service token with `aud=user`. The route is idempotent: first login creates the row; later logins refresh identity fields and leave `platform_roles` unchanged. When no active user holds `operator.platform-admin`, the first provisioned principal with Tier-1 `operator` receives that role automatically so Admin → Users works without a manual database seed.
+Authentication provisions registry rows with `PUT /api/v1/users/{uuid}` using a service token with `aud=user`. The route is idempotent: first login creates the row with **`roles: []`**; later logins refresh identity fields only and **never change `roles`**. Assign tier-2 roles per [INSTALLATION_PLAN — Greenfield Step 0](INSTALLATION_PLAN.md#greenfield-step-0--assign-platform-registry-roles) (SQL on user Postgres for the first admin), then authorized `POST` / `PATCH` (Cedar) or operator admin UI.
 
 ## Full stack (compose)
 

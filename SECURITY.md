@@ -37,7 +37,7 @@ To report any security-related issue please email security@neosofia.tech — do 
 
 ## Authorization (Cedar)
 
-Policy bundle: `policies/*.cedar` only (no Cedar schema file). Entity payloads are built in `src/authorization/entities.py`.
+Policy bundle: `policies/*.cedar` only (no Cedar schema file). Entity payloads are built in `src/authorization/entities.py`. Policy layout and CDP overlays: [policies/README.md](policies/README.md).
 
 | Rule | Who | Action | Resource |
 |------|-----|--------|----------|
@@ -48,7 +48,7 @@ Policy bundle: `policies/*.cedar` only (no Cedar schema file). Entity payloads a
 | Role picklists | Any authenticated principal | `role_catalog:read` | `users::RoleCatalog` |
 | Login provisioning | `authentication` service token | `user:provision` | `users::UserProvisioning` |
 
-**Defense in depth:** Registry administration requires matching **tenant type**, **roles** (from JWT `neosofia:roles` and/or this registry), and same **tenant** as the target row. Role assignment is validated against `roles/*.json` for the assigner's Tier-1 actors (`neosofia:actors` / `neosofia:session_actors`). Self-service PATCH field allowlist remains in application code. See [ADR-0014](https://github.com/Neosofia/cdp/blob/main/architecture/adrs/0014-tenant-types-and-org-roles.md).
+**Defense in depth:** Registry administration requires matching **tenant type**, **roles** (from JWT `neosofia:roles` and/or this registry), and same **tenant** as the target row. **Role assignment** on create/update is enforced in Cedar (`policies/policy.cedar`; proposed slugs → `roleNamespaces` on the write entity). Catalog JSON lists valid slug vocabulary; `validate_roles` rejects unknown slugs at persistence. Self-service PATCH field allowlist remains in application code. See [ADR-0014](https://github.com/Neosofia/cdp/blob/main/architecture/adrs/0014-tenant-types-and-org-roles.md).
 
 ---
 

@@ -84,6 +84,26 @@ def test_list_users_with_search():
     assert total == 0
 
 
+def test_list_users_filters_by_tenant_uuid():
+    mock_db = MagicMock()
+    mock_db.scalar.return_value = 0
+    mock_db.scalars.return_value.all.return_value = []
+    tenant = "00000000-0000-7000-8000-000000000001"
+
+    user_service.list_users(
+        mock_db,
+        page=1,
+        page_size=10,
+        search="",
+        tenant_uuid=tenant,
+    )
+
+    query = mock_db.scalars.call_args.args[0]
+    assert any(
+        "tenant_uuid" in str(clause) for clause in query._where_criteria
+    )
+
+
 def test_update_user_self_service_fields():
     mock_db = MagicMock()
     row = _user_row()
@@ -94,7 +114,6 @@ def test_update_user_self_service_fields():
         str(USER_ID),
         str(USER_ID),
         {"first_name": "  Ben  ", "last_name": "", "email": None},
-        self_service=True,
     )
 
     assert row.first_name == "Ben"
@@ -116,7 +135,6 @@ def test_update_user_self_service_accepts_tos():
         str(USER_ID),
         str(USER_ID),
         {"tos_accepted": True},
-        self_service=True,
     )
 
     assert row.tos_accepted is True
@@ -137,7 +155,6 @@ def test_update_user_operator_fields():
             "tenant_uuid": str(new_tenant),
             "roles": ["site.clinical"],
         },
-        self_service=False,
     )
 
     assert row.tenant_uuid == new_tenant
@@ -156,10 +173,9 @@ def _provision_payload(**overrides) -> dict:
     return payload
 
 
-def test_provision_user_identity_inserts_with_empty_roles():
+def test_provision_user_identity_creates_row_with_empty_roles():
     mock_db = MagicMock()
     mock_db.get.return_value = None
-    mock_db.scalar.return_value = 0
 
     result, created = user_service.provision_user_identity(
         mock_db,
@@ -173,31 +189,14 @@ def test_provision_user_identity_inserts_with_empty_roles():
     assert row.roles == []
     assert row.changed_by_type == user_service.SERVICE_ACTOR_TYPE
     assert result["email"] == "ada@example.com"
+    assert result["roles"] == []
 
 
-def test_provision_user_identity_bootstraps_first_operator():
+def test_provision_user_identity_creates_row_when_user_absent():
     mock_db = MagicMock()
     mock_db.get.return_value = None
-    mock_db.scalar.return_value = 0
 
     result, created = user_service.provision_user_identity(
-        mock_db,
-        str(USER_ID),
-        _provision_payload(actors=["operator", "clinician"]),
-    )
-
-    row = mock_db.add.call_args.args[0]
-    assert created is True
-    assert row.roles == ["platform.admin"]
-    assert result["roles"] == ["platform.admin"]
-
-
-def test_provision_user_identity_skips_bootstrap_when_platform_admin_exists():
-    mock_db = MagicMock()
-    mock_db.get.return_value = None
-    mock_db.scalar.return_value = 1
-
-    _, created = user_service.provision_user_identity(
         mock_db,
         str(USER_ID),
         _provision_payload(actors=["operator"]),
@@ -206,23 +205,7 @@ def test_provision_user_identity_skips_bootstrap_when_platform_admin_exists():
     row = mock_db.add.call_args.args[0]
     assert created is True
     assert row.roles == []
-
-
-def test_provision_user_identity_creates_row_when_user_absent():
-    mock_db = MagicMock()
-    mock_db.get.return_value = None
-    mock_db.scalar.return_value = 0
-
-    result, created = user_service.provision_user_identity(
-        mock_db,
-        str(USER_ID),
-        _provision_payload(actors=["operator"]),
-    )
-
-    row = mock_db.add.call_args.args[0]
-    assert created is True
-    assert row.roles == ["platform.admin"]
-    assert result["roles"] == ["platform.admin"]
+    assert result["roles"] == []
 
 
 def test_provision_user_identity_updates_identity_only():
@@ -243,13 +226,10 @@ def test_provision_user_identity_updates_identity_only():
     assert result["roles"] == ["platform.admin"]
 
 
-@patch("src.domain.role_catalog.merge_provision_default_roles")
-def test_provision_user_identity_backfills_default_roles_on_login(merge_defaults):
-    merge_defaults.return_value = ["site.clinical", "patient.self"]
+def test_provision_user_identity_does_not_backfill_roles_on_login():
     mock_db = MagicMock()
     row = _user_row(roles=[])
     mock_db.get.return_value = row
-    mock_db.scalar.return_value = 1
 
     result, created = user_service.provision_user_identity(
         mock_db,
@@ -258,12 +238,8 @@ def test_provision_user_identity_backfills_default_roles_on_login(merge_defaults
     )
 
     assert created is False
-    assert row.roles == ["site.clinical", "patient.self"]
-    assert result["roles"] == ["site.clinical", "patient.self"]
-    merge_defaults.assert_called_once_with(
-        ["clinician", "patient"],
-        [],
-    )
+    assert row.roles == []
+    assert result["roles"] == []
 
 
 def test_provision_user_identity_integrity_conflict():
@@ -288,7 +264,6 @@ def test_update_user_not_found():
             str(USER_ID),
             str(USER_ID),
             {"first_name": "X"},
-            self_service=True,
         )
 
 
@@ -304,7 +279,6 @@ def test_update_user_integrity_conflict():
             str(USER_ID),
             str(USER_ID),
             {"email": "dup@example.com"},
-            self_service=True,
         )
 
     mock_db.rollback.assert_called_once()
@@ -348,52 +322,43 @@ def test_get_user_audits_returns_items():
     assert items[0]["change_type"] == 2
 
 
-def test_create_user_defaults_patient_role_for_clinician():
-    mock_db = MagicMock()
-    mock_db.get.return_value = None
-    mock_db.scalar.return_value = None
-    payload = {
-        "tenant_uuid": str(TENANT),
-        "first_name": "Jordan",
-        "last_name": "Lee",
-        "email": "jordan@example.com",
-        "display_code": "PAT-9001",
-    }
-
-    result, created = user_service.create_user(
-        mock_db,
-        str(USER_ID),
-        payload,
-        assigner_actor_list=["clinician"],
-    )
-
-    assert created is True
-    assert result["roles"] == ["patient.self"]
-    assert result["display_code"] == "PAT-9001"
-    mock_db.add.assert_called_once()
-    mock_db.commit.assert_called_once()
-
-
-def test_create_user_rejects_non_patient_roles_for_clinician():
+def test_create_user_requires_roles_when_catalog_has_no_default():
     mock_db = MagicMock()
     payload = {
         "tenant_uuid": str(TENANT),
         "first_name": "Jordan",
         "last_name": "Lee",
         "email": "jordan@example.com",
-        "roles": ["site.clinical"],
+        "display_code": "EXT-9001",
     }
 
-    with pytest.raises(ValueError, match="patient.self"):
+    with pytest.raises(ValueError, match="roles is required"):
         user_service.create_user(
             mock_db,
             str(USER_ID),
             payload,
-            assigner_actor_list=["clinician"],
         )
 
 
-def test_create_user_clinician_enrollment_skips_assigner_catalog():
+def test_create_user_rejects_unknown_roles():
+    mock_db = MagicMock()
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "roles": ["not.a.real.role"],
+    }
+
+    with pytest.raises(ValueError, match="unknown roles"):
+        user_service.create_user(
+            mock_db,
+            str(USER_ID),
+            payload,
+        )
+
+
+def test_create_user_allows_patient_self_for_clinician_enroll():
     mock_db = MagicMock()
     mock_db.get.return_value = None
     mock_db.scalar.return_value = None
@@ -409,11 +374,32 @@ def test_create_user_clinician_enrollment_skips_assigner_catalog():
         mock_db,
         str(USER_ID),
         payload,
-        assigner_actor_list=["clinician"],
     )
 
     assert created is True
     assert result["roles"] == ["patient.self"]
+
+
+def test_create_user_accepts_catalog_roles():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+    mock_db.scalar.return_value = None
+    payload = {
+        "tenant_uuid": str(TENANT),
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+        "roles": ["site.clinical"],
+    }
+
+    result, created = user_service.create_user(
+        mock_db,
+        str(USER_ID),
+        payload,
+    )
+
+    assert created is True
+    assert result["roles"] == ["site.clinical"]
 
 
 def test_create_user_upserts_when_uuid_provided():
@@ -429,7 +415,7 @@ def test_create_user_upserts_when_uuid_provided():
         "last_name": "Lee",
         "email": "jordan@example.com",
         "display_code": "PAT-9001",
-        "roles": ["patient.self"],
+        "roles": ["site.clinical"],
     }
 
     with patch.object(user_service, "_row_to_dict", return_value={"uuid": str(OTHER_USER_ID)}):
@@ -437,7 +423,6 @@ def test_create_user_upserts_when_uuid_provided():
             mock_db,
             str(USER_ID),
             payload,
-            assigner_actor_list=["operator"],
         )
 
     assert created is False
@@ -456,6 +441,7 @@ def test_create_user_rejects_duplicate_display_code():
         "last_name": "Lee",
         "email": "jordan@example.com",
         "display_code": "PAT-9001",
+        "roles": ["site.clinical"],
     }
 
     with pytest.raises(user_service.ConflictError, match="Display code 'PAT-9001'"):
@@ -463,14 +449,16 @@ def test_create_user_rejects_duplicate_display_code():
             mock_db,
             str(USER_ID),
             payload,
-            assigner_actor_list=["clinician"],
         )
 
     mock_db.commit.assert_not_called()
 
 
-def test_create_user_rejects_uuid_for_clinician():
+def test_create_user_allows_stable_uuid_with_catalog_roles():
     mock_db = MagicMock()
+    existing = MagicMock()
+    mock_db.get.return_value = existing
+    mock_db.scalar.return_value = None
     payload = {
         "tenant_uuid": str(TENANT),
         "uuid": str(OTHER_USER_ID),
@@ -480,30 +468,12 @@ def test_create_user_rejects_uuid_for_clinician():
         "roles": ["patient.self"],
     }
 
-    with pytest.raises(ValueError, match="uuid or idp_id"):
-        user_service.create_user(
+    with patch.object(user_service, "_row_to_dict", return_value={"uuid": str(OTHER_USER_ID)}):
+        result, created = user_service.create_user(
             mock_db,
             str(USER_ID),
             payload,
-            assigner_actor_list=["clinician"],
         )
 
-
-def test_create_user_rejects_non_patient_roles_for_stable_uuid_seeding():
-    mock_db = MagicMock()
-    payload = {
-        "tenant_uuid": str(TENANT),
-        "uuid": str(OTHER_USER_ID),
-        "first_name": "Jordan",
-        "last_name": "Lee",
-        "email": "jordan@example.com",
-        "roles": ["site.clinical"],
-    }
-
-    with pytest.raises(ValueError, match="stable uuid seeding"):
-        user_service.create_user(
-            mock_db,
-            str(USER_ID),
-            payload,
-            assigner_actor_list=["operator"],
-        )
+    assert created is False
+    assert result["uuid"] == str(OTHER_USER_ID)

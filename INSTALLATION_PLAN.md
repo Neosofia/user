@@ -2,6 +2,26 @@
 
 Per-version instructions for system administrators: prerequisites, deploy and configuration steps, post-deploy verification, and evidence to capture. For what changed in each release, see [CHANGELOG.md](CHANGELOG.md) when present, or the GitHub release for that tag.
 
+## Greenfield Step 0 — assign platform registry roles
+
+Run once per new environment before platform admin flows work. Authentication `PUT /api/v1/users/{uuid}` provision creates the registry row with **`roles: []`** and never assigns tier-2 roles on login. Tier-1 **`operator`** in WorkOS does not grant **`platform.admin`**.
+
+**Prerequisites:** stack deployed; admin has logged in once (registry row exists); note `user_uuid`.
+
+**Assign roles** (example — first platform admin):
+
+```sql
+UPDATE users
+SET roles = ARRAY['platform.admin']::text[]
+WHERE uuid = '<admin-user-uuid>';
+```
+
+Use the user service migration/superuser URL. Then the admin **logs out and back in** (refreshes the authentication JWT roles mirror). Verify `GET /api/v1/users/{uuid}` and `neosofia:roles` in the platform JWT.
+
+CDP stacks: see [CDP INSTALLATION_PLAN — Step 0](https://github.com/Neosofia/cdp/blob/main/INSTALLATION_PLAN.md#greenfield-step-0--assign-platform-registry-roles) for the full checklist and evidence list.
+
+---
+
 ## user v0.7.0
 
 **Build identifiers:** Tag `user/v0.7.0`; SDK **`authorization-in-the-middle/v0.4.23`**; **cdp-user-policies v0.2.1** unchanged.
@@ -43,7 +63,7 @@ Per-version instructions for system administrators: prerequisites, deploy and co
 
 **Prerequisites:**
 
-- Publish **cdp-user-policies v0.2.1** (bundles `cdp-overlay.json` for role catalog defaults).
+- Publish **cdp-user-policies v0.2.1** (bundles `cdp-overlay.json` for role catalog validation and UI labels).
 - Authentication **service registry** entry for `user` uses an **HTTPS** `base_url` (not plain HTTP internal mesh URLs).
 
 **Pre-deploy:**
@@ -59,12 +79,12 @@ Per-version instructions for system administrators: prerequisites, deploy and co
 **Post-deploy verification:**
 
 1. `GET /health` reports **0.6.8**.
-2. Log in as a multi-actor demo user; provision assigns default tier-2 roles (`site.clinical`, `patient.self`, etc.) and the session picker lists them.
+2. Log in as a multi-actor demo user; provision creates the registry row with **`roles: []`**; demo seeds or admin UI assign tier-2 roles before the session picker lists them.
 
 **Evidence:**
 
 - Auth log line `user_provisioning_succeeded` (not `status_code=302`) on login.
-- `GET /api/v1/users/{self}` returns non-empty `roles` after first login.
+- `GET /api/v1/users/{self}` returns the provisioned row (`roles` may be `[]` until seeds or admin assign them).
 
 ## user v0.4.0 (ADR-0014 tenant types and roles)
 
@@ -90,9 +110,9 @@ Per-version instructions for system administrators: prerequisites, deploy and co
 **Post-deploy verification:**
 
 1. `GET /health` succeeds.
-2. `GET /api/v1/roles` returns `roles`, `tenant_types`, `assigner_actors`, and `assigner_actor_prefixes`.
+2. `GET /api/v1/roles` returns `roles`, `tenant_types`, `role_definitions`, and `actor_classes`.
 3. Registry and PATCH bodies accept **`roles`** (full slugs, e.g. `platform.admin`, `cro.clinical-ops`).
-4. First Tier-1 `operator` provisioned on login receives **`platform.admin`**.
+4. `PUT` provision on first login returns **`roles: []`**; complete [Greenfield Step 0](#greenfield-step-0--assign-platform-registry-roles) (or use an existing admin via **Admin → Users**) before operator list flows.
 5. CDP **Admin → Users** lists users and saves role edits (with authentication and UI versions from prerequisites).
 
 **Evidence:**

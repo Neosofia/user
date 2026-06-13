@@ -72,6 +72,27 @@
         }
       }
     },
+    "/api/v1/tenants/{tenant_uuid}/users": {
+      "get": {
+        "summary": "List users in a tenant",
+        "parameters": [
+          { "name": "tenant_uuid", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant-scoped user list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TenantUserListResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/{user_uuid}": {
       "get": {
         "parameters": [
@@ -108,6 +129,14 @@
                 "schema": { "$ref": "#/components/schemas/User" }
               }
             }
+          },
+          "403": {
+            "description": "Cedar policy denied the requested field changes (e.g. self-service roles or identity fields)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
           }
         }
       },
@@ -135,7 +164,7 @@
             }
           },
           "201": {
-            "description": "Registry row created; first Tier-1 operator receives platform.admin when none exists",
+            "description": "Registry row created with roles: [] (identity only; assign roles via authorized create/update)",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/User" }
@@ -196,7 +225,7 @@
             "description": "Same as Authentication users.uuid (JWT sub)"
           },
           "tenant_uuid": { "type": "string", "format": "uuid" },
-          "idp_id": { "type": "string" },
+          "idp_id": { "type": "string", "minLength": 1 },
           "display_code": { "type": "string", "nullable": true },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
@@ -219,10 +248,37 @@
         },
         "required": ["items", "total", "page", "page_size"]
       },
+      "TenantUserListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/UserListResponse" },
+          {
+            "type": "object",
+            "properties": {
+              "tenant_uuid": { "type": "string", "format": "uuid" }
+            },
+            "required": ["tenant_uuid"]
+          }
+        ]
+      },
       "UserUpdateRequest": {
         "type": "object",
         "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Registry primary key. Accepted on PATCH for Cedar authorization only; self-service updates are forbidden (403). Not applied by PATCH handlers (use PUT provision for identity sync)."
+          },
           "tenant_uuid": { "type": "string", "format": "uuid" },
+          "idp_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Identity provider subject. Accepted on PATCH for Cedar authorization only; self-service updates are forbidden (403). Not applied by PATCH handlers (use PUT provision)."
+          },
+          "actor_class": {
+            "type": "string",
+            "enum": ["operator", "study", "clinician", "patient"],
+            "description": "Tier-1 actor class. Accepted on PATCH for Cedar authorization only; self-service updates are forbidden (403). Not persisted on PATCH."
+          },
           "display_code": { "type": "string", "nullable": true },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
@@ -230,6 +286,7 @@
           "roles": { "type": "array", "items": { "type": "string" } },
           "tos_accepted": {
             "type": "boolean",
+            "enum": [true],
             "description": "Self-service only; may only be set to true to record TOS acceptance"
           }
         },
@@ -241,7 +298,7 @@
           "tenant_uuid": {
             "type": "string",
             "format": "uuid",
-            "description": "Defaults to the caller tenant when omitted"
+            "description": "Tenant that owns the new user row"
           },
           "display_code": { "type": "string", "nullable": true },
           "uuid": {
@@ -259,26 +316,22 @@
           "roles": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Defaults to patient.self for clinician enrollment"
+            "minItems": 1,
+            "description": "Role slugs for the new user (e.g. patient.self for enrollment)"
           }
         },
-        "required": ["first_name", "last_name", "email"],
+        "required": ["tenant_uuid", "first_name", "last_name", "email", "roles"],
         "additionalProperties": false
       },
       "UserProvisionRequest": {
         "type": "object",
         "properties": {
           "tenant_uuid": { "type": "string", "format": "uuid" },
-          "idp_id": { "type": "string" },
+          "idp_id": { "type": "string", "minLength": 1 },
           "display_code": { "type": "string", "nullable": true },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "actors": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Tier-1 actor classes from Authentication (used to bootstrap the first platform.admin)"
-          }
+          "email": { "type": "string", "nullable": true }
         },
         "required": ["tenant_uuid", "idp_id", "first_name", "last_name", "email"],
         "additionalProperties": false
@@ -289,7 +342,7 @@
           "history_uuid": { "type": "string", "format": "uuid", "nullable": true },
           "uuid": { "type": "string", "format": "uuid" },
           "tenant_uuid": { "type": "string", "format": "uuid" },
-          "idp_id": { "type": "string" },
+          "idp_id": { "type": "string", "minLength": 1 },
           "display_code": { "type": "string", "nullable": true },
           "first_name": { "type": "string", "nullable": true },
           "last_name": { "type": "string", "nullable": true },
@@ -319,24 +372,29 @@
           "actor_classes": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Tier-1 JWT roles (operator, clinician, patient); not stored on user rows"
+            "description": "Platform tier-1 actors (operator, study, clinician, patient); vocabulary, not caller JWT"
           },
           "roles": { "type": "array", "items": { "type": "string" } },
-          "assigner_actors": {
+          "role_definitions": {
             "type": "array",
-            "items": { "type": "string" },
-            "description": "Tier-1 roles from the JWT used to filter assignable roles"
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": "string" }
+              },
+              "required": ["id", "label"]
+            }
           },
-          "assigner_actor_prefixes": {
+          "tenant_types": {
             "type": "object",
             "additionalProperties": {
               "type": "array",
               "items": { "type": "string" }
-            },
-            "description": "Catalog prefixes registered for the assigner's Tier-1 roles"
+            }
           }
         },
-        "required": ["actor_classes", "roles", "assigner_actors"]
+        "required": ["actor_classes", "roles", "role_definitions", "tenant_types"]
       },
       "ErrorResponse": {
         "type": "object",

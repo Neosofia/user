@@ -2,33 +2,27 @@ from __future__ import annotations
 
 import uuid as _uuid
 
+from authorization_in_the_middle.flask_identity import jwt_claim_principal_attributes
 from authorization_in_the_middle.security import with_security
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+from werkzeug.exceptions import NotFound
 
 from src.authorization import entities as auth_entities
 from src.bootstrap.config import settings
 from src.bootstrap.logging_config import log_event
 from src.db.engine import SessionLocal
-from src.domain.role_catalog import validate_roles_for_assigner_actors
 from src.services import user_service
-from src.services.user_service import PATIENT_SELF_ROLE
 
 bp = Blueprint("users", __name__, url_prefix="/api/v1/users")
+tenant_users_bp = Blueprint("tenant_users", __name__, url_prefix="/api/v1/tenants")
 
 _DEFAULT_PAGE_SIZE = 20
 _MAX_PAGE_SIZE = 100
-_SELF_FIELDS = frozenset({"first_name", "last_name", "email", "tos_accepted"})
-_CLINICIAN_PATIENT_PROFILE_FIELDS = frozenset({"display_code", "first_name", "last_name", "email"})
-_IMMUTABLE_FIELDS = frozenset({"uuid", "idp_id", "actor_class"})
-_UNSUPPORTED_SCOPE_FIELDS = frozenset({
-    "site_uuid",
-    "site_group_uuid",
-    "authorized_study_ids",
-})
-_PROVISION_FIELDS = frozenset({"tenant_uuid", "idp_id", "first_name", "last_name", "email"})
-_PROVISION_OPTIONAL_FIELDS = frozenset({"actors", "display_code"})
-_CREATE_REQUIRED_FIELDS = frozenset({"first_name", "last_name", "email"})
-_CREATE_OPTIONAL_FIELDS = frozenset({"display_code", "tenant_uuid", "roles", "uuid", "idp_id"})
+
+
+def _jwt_sub() -> str:
+    sub, _, jwt_attrs = jwt_claim_principal_attributes(g.jwt_claims)
+    return str(jwt_attrs.get("uuid") or sub)
 
 
 def _parse_pagination() -> tuple[int, int] | tuple[None, tuple]:
@@ -46,174 +40,22 @@ def _parse_pagination() -> tuple[int, int] | tuple[None, tuple]:
     return (page, page_size), None
 
 
-def _reject_immutable_fields(data: dict) -> str | None:
-    present = _IMMUTABLE_FIELDS.intersection(data.keys())
-    if present:
-        return f"fields are immutable: {sorted(present)}"
-    return None
-
-
-def _is_clinician_only() -> bool:
-    return auth_entities.principal_actors() == ["clinician"]
-
-
-def _reject_unsupported_scope_fields(data: dict) -> str | None:
-    present = _UNSUPPORTED_SCOPE_FIELDS.intersection(data.keys())
-    if present:
-        return (
-            "site and study scope belong in domain services, not the user registry; "
-            f"remove: {sorted(present)}"
-        )
-    return None
-
-
-def _validate_update_payload(
-    data: dict,
-    *,
-    self_service: bool,
-    target: dict | None = None,
-    clinician_only: bool = False,
-) -> str | None:
-    if not data:
-        return "empty body"
-    message = _reject_immutable_fields(data)
-    if message:
-        return message
-    message = _reject_unsupported_scope_fields(data)
-    if message:
-        return message
-    if self_service:
-        extra = set(data.keys()) - _SELF_FIELDS
-        if extra:
-            return (
-                f"self-service update allows only {sorted(_SELF_FIELDS)}; "
-                f"remove: {sorted(extra)}"
-            )
-        if "tos_accepted" in data and data.get("tos_accepted") is not True:
-            return "tos_accepted may only be set to true"
-        return None
-    if clinician_only:
-        extra = set(data.keys()) - _CLINICIAN_PATIENT_PROFILE_FIELDS
-        if extra:
-            return (
-                f"clinician patient profile update allows only "
-                f"{sorted(_CLINICIAN_PATIENT_PROFILE_FIELDS)}; remove: {sorted(extra)}"
-            )
-        if target is not None and PATIENT_SELF_ROLE not in (target.get("roles") or []):
-            return "clinician may update patient.self users only"
-        return None
-    if "roles" in data:
-        if target is None:
-            return "user not found"
-        try:
-            roles = list(data["roles"] or [])
-            validate_roles_for_assigner_actors(
-                roles,
-                auth_entities.principal_actors(),
-            )
-        except ValueError as exc:
-            return str(exc)
-    if "tenant_uuid" in data:
-        try:
-            _uuid.UUID(str(data["tenant_uuid"]))
-        except ValueError:
-            return "tenant_uuid must be a UUID"
-    if "display_code" in data:
-        value = data.get("display_code")
-        if value is not None and not isinstance(value, str):
-            return "display_code must be a string or null"
-    return None
-
-
-def _validate_create_payload(data: dict) -> str | None:
-    if not isinstance(data, dict) or not data:
-        return "body must be a JSON object"
-    missing = sorted(_CREATE_REQUIRED_FIELDS - data.keys())
-    if missing:
-        return f"missing required fields: {missing}"
-    extra = sorted(set(data.keys()) - _CREATE_REQUIRED_FIELDS - _CREATE_OPTIONAL_FIELDS)
-    if extra:
-        return f"unsupported fields: {extra}"
-    message = _reject_unsupported_scope_fields(data)
-    if message:
-        return message
-    if "tenant_uuid" in data:
-        try:
-            _uuid.UUID(str(data["tenant_uuid"]))
-        except ValueError:
-            return "tenant_uuid must be a UUID"
-    if "uuid" in data:
-        try:
-            _uuid.UUID(str(data["uuid"]))
-        except ValueError:
-            return "uuid must be a UUID"
-    roles = data.get("roles")
-    if roles is not None:
-        if not isinstance(roles, list) or any(not isinstance(role, str) for role in roles):
-            return "roles must be an array of strings"
-    for field in ("first_name", "last_name", "email", "display_code", "idp_id"):
-        value = data.get(field)
-        if value is not None and not isinstance(value, str):
-            return f"{field} must be a string or null"
-    return None
-
-
-def _resolve_create_tenant(data: dict) -> tuple[str | None, str | None]:
-    actor_tenant = auth_entities.principal_tenant_uuid()
-    requested = data.get("tenant_uuid")
-    if requested:
-        try:
-            tenant_uuid = str(_uuid.UUID(str(requested)))
-        except ValueError:
-            return None, "tenant_uuid must be a UUID"
-    elif actor_tenant:
-        tenant_uuid = actor_tenant
-    else:
-        return None, "tenant_uuid is required"
-
-    if actor_tenant and tenant_uuid != actor_tenant:
-        return None, "tenant_uuid must match your tenant"
-    return tenant_uuid, None
-
-
-def _validate_provision_payload(user_uuid: str, data: dict) -> str | None:
+def _parse_tenant_uuid(tenant_uuid: str) -> str | None:
     try:
-        _uuid.UUID(str(user_uuid))
+        return str(_uuid.UUID(str(tenant_uuid)))
     except ValueError:
-        return "user_uuid must be a UUID"
-    if not isinstance(data, dict) or not data:
-        return "body must be a JSON object"
-    missing = sorted(_PROVISION_FIELDS - data.keys())
-    if missing:
-        return f"missing required fields: {missing}"
-    extra = sorted(set(data.keys()) - _PROVISION_FIELDS - _PROVISION_OPTIONAL_FIELDS)
-    if extra:
-        return f"unsupported fields: {extra}"
-    try:
-        _uuid.UUID(str(data["tenant_uuid"]))
-    except ValueError:
-        return "tenant_uuid must be a UUID"
-    if not str(data.get("idp_id") or "").strip():
-        return "idp_id is required"
-    actors = data.get("actors")
-    if actors is not None:
-        if not isinstance(actors, list) or any(not isinstance(role, str) for role in actors):
-            return "actors must be an array of strings"
-    for field in ("first_name", "last_name", "email", "display_code"):
-        value = data.get(field)
-        if value is not None and not isinstance(value, str):
-            return f"{field} must be a string or null"
-    return None
+        return None
 
 
 def init_user_routes(app, cedar_evaluator) -> None:
     app.extensions["cedar_evaluator"] = cedar_evaluator
     app.register_blueprint(bp)
+    app.register_blueprint(tenant_users_bp)
 
 
 @bp.route("", methods=["GET"])
 @with_security(rate_limit=settings.user_read_rate_limit)
-def list_users():
+def list_users_platform_catalog():
     pagination, error = _parse_pagination()
     if error:
         return error
@@ -228,28 +70,51 @@ def list_users():
         return jsonify({"error": "database error"}), 500
 
 
+@tenant_users_bp.route("/<tenant_uuid>/users", methods=["GET"])
+@with_security(
+    rate_limit=settings.user_read_rate_limit,
+    action='Action::"user:list"',
+    resource_fn=auth_entities.tenant_user_catalog_resource_uid,
+    entities_fn=auth_entities.tenant_user_list_entities,
+)
+def list_tenant_users(tenant_uuid: str):
+    parsed_tenant = _parse_tenant_uuid(tenant_uuid)
+    if parsed_tenant is None:
+        return jsonify({"error": "invalid_request", "message": "tenant_uuid must be a UUID"}), 400
+    pagination, error = _parse_pagination()
+    if error:
+        return error
+    page, page_size = pagination
+    search = (request.args.get("q", "") or "").strip()
+    try:
+        with SessionLocal() as db:
+            items, total = user_service.list_users(
+                db,
+                page,
+                page_size,
+                search,
+                tenant_uuid=parsed_tenant,
+            )
+            return jsonify({
+                "tenant_uuid": parsed_tenant,
+                "items": items,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+            }), 200
+    except Exception as exc:
+        log_event("list_tenant_users_failed", error_type=type(exc).__name__)
+        return jsonify({"error": "database error"}), 500
+
+
 @bp.route("", methods=["POST"])
 @with_security(rate_limit=settings.user_write_rate_limit)
 def create_user():
-    data = request.get_json(silent=True) or {}
-    message = _validate_create_payload(data)
-    if message:
-        return jsonify({"error": "invalid_request", "message": message}), 400
-
-    tenant_uuid, tenant_error = _resolve_create_tenant(data)
-    if tenant_error:
-        return jsonify({"error": "invalid_request", "message": tenant_error}), 400
-
-    payload = {**data, "tenant_uuid": tenant_uuid}
-    actor = auth_entities.principal_sub()
+    write_record = g.write_resource
+    actor = _jwt_sub()
     try:
         with SessionLocal() as db:
-            item, created = user_service.create_user(
-                db,
-                actor,
-                payload,
-                assigner_actor_list=auth_entities.principal_actors(),
-            )
+            item, created = user_service.create_user(db, actor, write_record)
             return jsonify(item), 201 if created else 200
     except ValueError as exc:
         return jsonify({"error": "invalid_request", "message": str(exc)}), 400
@@ -275,42 +140,21 @@ def get_user(user_uuid: str):
     resource_loader=lambda user_uuid: user_service.get_user_or_404(user_uuid),
 )
 def patch_user(user_uuid: str):
-    data = request.get_json(silent=True) or {}
-    is_own_user = auth_entities.principal_sub() == user_uuid
-    tos_self_accept = is_own_user and set(data.keys()) == {"tos_accepted"}
-    self_service = (
-        is_own_user and not auth_entities.principal_is_operator()
-    ) or tos_self_accept
-    clinician_only = _is_clinician_only() and not self_service
-    target = None
-    if not self_service and ("roles" in data or clinician_only):
-        try:
-            target = user_service.get_user_or_404(user_uuid)
-        except NotFound:
-            return jsonify({"error": "not_found"}), 404
-    try:
-        message = _validate_update_payload(
-            data,
-            self_service=self_service,
-            target=target,
-            clinician_only=clinician_only,
-        )
-    except ValueError as exc:
-        return jsonify({"error": "invalid_request", "message": str(exc)}), 400
-    if message:
-        return jsonify({"error": "invalid_request", "message": message}), 400
-    actor = auth_entities.principal_sub()
+    immutable = sorted(user_service.PATCH_CEDAR_ONLY_FIELDS & g.validated_body.keys())
+    if immutable:
+        return jsonify({
+            "error": "invalid_request",
+            "message": f"field(s) not mutable via PATCH: {', '.join(immutable)}",
+        }), 400
+
+    actor = _jwt_sub()
     try:
         with SessionLocal() as db:
-            item = user_service.update_user(
-                db,
-                actor,
-                user_uuid,
-                data,
-                self_service=self_service,
-            )
+            item = user_service.update_user(db, actor, user_uuid, g.patch_body)
             log_event("user_updated", actor_uuid=actor, user_uuid=user_uuid)
             return jsonify(item), 200
+    except NotFound:
+        return jsonify({"error": "not_found"}), 404
     except user_service.ConflictError as exc:
         return jsonify({"error": "conflict", "message": str(exc)}), 409
     except Exception as exc:
@@ -349,16 +193,14 @@ def get_user_audits(user_uuid: str):
     resource_fn=auth_entities.user_provisioning_resource_uid,
     entities_fn=auth_entities.user_provisioning_entities,
     enforce_active_actor=False,
+    validate_openapi=True,
     rate_limit=settings.user_write_rate_limit,
 )
 def provision_user(user_uuid: str):
-    data = request.get_json(silent=True) or {}
-    message = _validate_provision_payload(user_uuid, data)
-    if message:
-        return jsonify({"error": "invalid_request", "message": message}), 400
+    payload = g.validated_body
     try:
         with SessionLocal() as db:
-            item, created = user_service.provision_user_identity(db, user_uuid, data)
+            item, created = user_service.provision_user_identity(db, user_uuid, payload)
             log_event("user_provisioned", user_uuid=user_uuid, created=created)
             return jsonify(item), 201 if created else 200
     except user_service.ConflictError as exc:

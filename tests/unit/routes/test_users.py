@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import jwt
@@ -6,15 +7,19 @@ import pytest
 from werkzeug.exceptions import NotFound
 
 from src.bootstrap.config import settings
-from src.routes import users as user_routes
+from authorization_in_the_middle.openapi_request import load_openapi_spec, validate_request_body
+
+from src.services import user_service
 
 pytestmark = pytest.mark.unit
 
 TENANT = "00000000-0000-7000-8000-000000000001"
 USER = "00000000-0000-7000-8000-000000000002"
 OTHER = "00000000-0000-7000-8000-000000000003"
+DEFAULT_TENANT_UUID = TENANT
 
 OPERATOR_HEADERS = {"X-Active-Actor": "operator"}
+OPENAPI_PATH = Path(__file__).resolve().parents[3] / "openapi.json"
 
 
 def _claim(name: str) -> str:
@@ -27,6 +32,7 @@ def _token(
     sub: str,
     actors: list[str],
     tenant_type: str = "platform",
+    tenant_uuid: str = DEFAULT_TENANT_UUID,
     roles: list[str] | None = None,
     session_actors: list[str] | None = None,
 ):
@@ -37,6 +43,7 @@ def _token(
         "iat": 1,
         _claim("actors"): actors,
         _claim("tenant_type"): tenant_type,
+        _claim("tenant_uuid"): tenant_uuid,
     }
     if session_actors is not None:
         claims[_claim("session_actors")] = session_actors
@@ -90,7 +97,7 @@ def test_list_users_requires_operator(mock_get_principal, client, rsa_keypair):
 
 @patch("src.services.user_service.get_user_or_404")
 @patch("src.routes.users.SessionLocal")
-def test_create_user_clinician_enrolls_patient(mock_session, mock_get_principal, client, rsa_keypair):
+def test_create_user_with_policy_authorized_actor(mock_session, mock_get_principal, client, rsa_keypair):
     mock_get_principal.return_value = _sample_user()
     mock_db = MagicMock()
     mock_session.return_value.__enter__.return_value = mock_db
@@ -105,16 +112,20 @@ def test_create_user_clinician_enrolls_patient(mock_session, mock_get_principal,
             "/api/v1/users",
             headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
             json={
+                "tenant_uuid": TENANT,
                 "first_name": "Jordan",
                 "last_name": "Lee",
                 "email": "jordan@example.com",
                 "display_code": "PAT-9001",
+                "roles": ["patient.self"],
             },
         )
     assert response.status_code == 201
     assert response.json["display_code"] == "PAT-9001"
     mock_create.assert_called_once()
-    assert mock_create.call_args.args[2]["tenant_uuid"] == TENANT
+    planned = mock_create.call_args.args[2]
+    assert planned["tenant_uuid"] == TENANT
+    assert planned["roles"] == ["patient.self"]
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -125,9 +136,11 @@ def test_create_user_rejects_patient_actor(mock_get_principal, client, rsa_keypa
         "/api/v1/users",
         headers={"Authorization": f"Bearer {token}"},
         json={
+            "tenant_uuid": TENANT,
             "first_name": "Jordan",
             "last_name": "Lee",
             "email": "jordan@example.com",
+            "roles": ["patient.self"],
         },
     )
     assert response.status_code == 403
@@ -145,10 +158,11 @@ def test_create_user_platform_admin(mock_session, mock_get_principal, client, rs
             "/api/v1/users",
             headers={"Authorization": f"Bearer {token}", **OPERATOR_HEADERS},
             json={
+                "tenant_uuid": TENANT,
                 "first_name": "Jordan",
                 "last_name": "Lee",
                 "email": "jordan@example.com",
-                "roles": ["patient.self"],
+                "roles": ["platform.admin"],
             },
         )
     assert response.status_code == 201
@@ -159,22 +173,20 @@ def test_create_user_platform_admin(mock_session, mock_get_principal, client, rs
 def test_create_user_returns_bad_request_on_value_error(mock_session, mock_get_principal, client, rsa_keypair):
     mock_get_principal.return_value = _sample_user()
     mock_session.return_value.__enter__.return_value = MagicMock()
-    with patch(
-        "src.services.user_service.create_user",
-        side_effect=ValueError("first_name, last_name, and email are required"),
-    ):
-        token = _token(rsa_keypair, sub=USER, actors=["clinician"])
-        response = client.post(
-            "/api/v1/users",
-            headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
-            json={
-                "first_name": "Jordan",
-                "last_name": "Lee",
-                "email": "jordan@example.com",
-            },
-        )
+    token = _token(rsa_keypair, sub=USER, actors=["clinician"])
+    response = client.post(
+        "/api/v1/users",
+        headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
+        json={
+            "tenant_uuid": TENANT,
+            "first_name": "Jordan",
+            "last_name": "Lee",
+            "email": "",
+            "roles": ["patient.self"],
+        },
+    )
     assert response.status_code == 400
-    assert "email are required" in response.json["message"]
+    assert "email" in response.json["message"]
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -184,9 +196,9 @@ def test_create_user_returns_conflict(mock_session, mock_get_principal, client, 
     mock_session.return_value.__enter__.return_value = MagicMock()
     with patch(
         "src.services.user_service.create_user",
-        side_effect=user_routes.user_service.ConflictError(
-            "Display code 'PAT-9001' is already assigned to another patient "
-            "in this organization. Use a different code or enroll the existing patient."
+        side_effect=user_service.ConflictError(
+            "Display code 'PAT-9001' is already assigned to another user "
+            "in this organization."
         ),
     ):
         token = _token(rsa_keypair, sub=USER, actors=["clinician"])
@@ -194,10 +206,12 @@ def test_create_user_returns_conflict(mock_session, mock_get_principal, client, 
             "/api/v1/users",
             headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
             json={
+                "tenant_uuid": TENANT,
                 "first_name": "Jordan",
                 "last_name": "Lee",
                 "email": "jordan@example.com",
                 "display_code": "PAT-9001",
+                "roles": ["patient.self"],
             },
         )
     assert response.status_code == 409
@@ -211,10 +225,15 @@ def test_create_user_validates_required_fields(mock_get_principal, client, rsa_k
     response = client.post(
         "/api/v1/users",
         headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
-        json={"first_name": "Jordan"},
+        json={
+            "tenant_uuid": TENANT,
+            "first_name": "Jordan",
+            "email": "jordan@example.com",
+            "roles": ["patient.self"],
+        },
     )
     assert response.status_code == 400
-    assert "missing required fields" in response.json["message"]
+    assert "last_name" in response.json["message"]
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -223,14 +242,41 @@ def test_list_users_clinician_can_list(mock_session, mock_get_principal, client,
     mock_get_principal.return_value = _sample_user()
     mock_db = MagicMock()
     mock_session.return_value.__enter__.return_value = mock_db
-    with patch("src.services.user_service.list_users", return_value=([_sample_user()], 1)):
+    with patch("src.services.user_service.list_users", return_value=([_sample_user()], 1)) as mock_list:
         token = _token(rsa_keypair, sub=USER, actors=["clinician"])
         response = client.get(
-            "/api/v1/users",
+            f"/api/v1/tenants/{TENANT}/users",
             headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
         )
     assert response.status_code == 200
     assert response.json["total"] == 1
+    assert response.json["tenant_uuid"] == TENANT
+    mock_list.assert_called_once()
+    assert mock_list.call_args.kwargs["tenant_uuid"] == TENANT
+
+
+@patch("src.services.user_service.get_user_or_404")
+def test_list_tenant_users_denies_other_tenant(mock_get_principal, client, rsa_keypair):
+    mock_get_principal.return_value = _sample_user()
+    other_tenant = "00000000-0000-7000-8000-000000000099"
+    token = _token(rsa_keypair, sub=USER, actors=["clinician"])
+    response = client.get(
+        f"/api/v1/tenants/{other_tenant}/users",
+        headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
+    )
+    assert response.status_code == 403
+
+
+@patch("src.services.user_service.get_user_or_404")
+def test_list_tenant_users_rejects_invalid_tenant_uuid(mock_get_principal, client, rsa_keypair):
+    mock_get_principal.return_value = _sample_user()
+    token = _token(rsa_keypair, sub=USER, actors=["clinician"])
+    response = client.get(
+        "/api/v1/tenants/not-a-uuid/users",
+        headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
+    )
+    # Cedar denies list on a catalog id that does not match principal.tenantId.
+    assert response.status_code == 403
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -252,7 +298,7 @@ def test_list_users_returns_paginated_items(mock_session, mock_get_principal, cl
     mock_db = MagicMock()
     mock_session.return_value.__enter__.return_value = mock_db
     with patch("src.services.user_service.list_users", return_value=([_sample_user()], 1)):
-        token = _token(rsa_keypair, sub=USER, actors=["operator"])
+        token = _admin_token(rsa_keypair, sub=USER)
         response = client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.json["total"] == 1
@@ -283,7 +329,6 @@ def test_list_users_platform_admin_with_mixed_registry_roles(
             headers={
                 "Authorization": f"Bearer {token}",
                 **OPERATOR_HEADERS,
-                "X-Active-Org-Role": "platform.admin",
             },
         )
     assert response.status_code == 200
@@ -313,7 +358,7 @@ def test_get_user_other_allowed_for_platform_admin(mock_get_user, client, rsa_ke
         return target
 
     mock_get_user.side_effect = load_user
-    token = _token(rsa_keypair, sub=USER, actors=["operator"])
+    token = _admin_token(rsa_keypair, sub=USER)
     response = client.get(f"/api/v1/users/{OTHER}", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.json["uuid"] == OTHER
@@ -333,7 +378,7 @@ def test_list_roles_allowed_for_clinician(mock_load_user, client, rsa_keypair):
     )
     assert response.status_code == 200
     assert "site.clinical" in response.json["roles"]
-    assert "platform.admin" not in response.json["roles"]
+    assert "platform.admin" in response.json["roles"]
 
 
 @patch("src.services.user_service.update_user")
@@ -368,7 +413,6 @@ def test_patch_patient_clinician_can_update_profile(mock_load_user, mock_update,
     )
     assert response.status_code == 200
     mock_update.assert_called_once()
-    assert mock_update.call_args.kwargs["self_service"] is False
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -388,26 +432,15 @@ def test_patch_patient_clinician_rejects_admin_fields(mock_load_user, client, rs
         headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
         json={"first_name": "Alice", "roles": ["platform.admin"]},
     )
-    assert response.status_code == 400
-    assert "remove:" in response.json["message"]
+    assert response.status_code == 403
 
 
-@patch("src.services.user_service.update_user")
 @patch("src.services.user_service.get_user_or_404")
-def test_patch_accepts_cross_tenant_type_roles_for_platform_user(
-    mock_load_user, mock_update, client, rsa_keypair
+def test_patch_rejects_cross_prefix_roles_for_platform_user(
+    mock_load_user, client, rsa_keypair
 ):
-    row = _sample_user()
-    mock_load_user.return_value = row
-    updated = {
-        **row,
-        "roles": [
-            "platform.admin",
-            "patient.self",
-            "site.clinical",
-        ],
-    }
-    mock_update.return_value = updated
+    target = _sample_user(OTHER)
+    mock_load_user.side_effect = lambda user_id: target if user_id == OTHER else _sample_user(user_id)
     tier1 = ["operator", "clinician", "patient"]
     token = _token(
         rsa_keypair,
@@ -415,14 +448,20 @@ def test_patch_accepts_cross_tenant_type_roles_for_platform_user(
         actors=tier1,
         session_actors=tier1,
         tenant_type="platform",
+        roles=["admin"],
     )
     response = client.patch(
         f"/api/v1/users/{OTHER}",
         headers={"Authorization": f"Bearer {token}", **OPERATOR_HEADERS},
-        json={"roles": updated["roles"]},
+        json={
+            "roles": [
+                "platform.admin",
+                "patient.self",
+                "site.clinical",
+            ],
+        },
     )
-    assert response.status_code == 200
-    mock_update.assert_called_once()
+    assert response.status_code == 403
 
 
 @patch("src.services.user_service.update_user")
@@ -442,7 +481,6 @@ def test_patch_self_as_operator_allows_admin_fields(mock_load_user, mock_update,
     )
     assert response.status_code == 200
     mock_update.assert_called_once()
-    assert mock_update.call_args.kwargs["self_service"] is False
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -456,8 +494,7 @@ def test_patch_self_as_clinician_rejects_admin_fields(mock_load_user, client, rs
         headers={"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"},
         json={"first_name": "Sam", "roles": ["platform.admin"]},
     )
-    assert response.status_code == 400
-    assert "remove:" in response.json["message"]
+    assert response.status_code == 403
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -470,7 +507,7 @@ def test_patch_rejects_domain_scope_fields(mock_load_user, client, rsa_keypair):
         json={"site_uuid": TENANT},
     )
     assert response.status_code == 400
-    assert "domain services" in response.json["message"]
+    assert "site_uuid" in response.json["message"]
 
 
 @patch("src.services.user_service.get_user_or_404")
@@ -495,15 +532,9 @@ def test_list_roles_returns_catalog(mock_load_user, client, rsa_keypair):
         headers={"Authorization": f"Bearer {token}", **OPERATOR_HEADERS},
     )
     assert response.status_code == 200
-    assert response.json["assigner_actors"] == ["operator"]
+    assert response.json["actor_classes"] == ["clinician", "demo", "operator", "patient", "study"]
     assert "platform.admin" in response.json["roles"]
-    assert "site.clinical" not in response.json["roles"]
-    assert response.json["assigner_actor_prefixes"]["operator"] == ["platform."]
-    assert response.json["assigner_actor_prefixes"]["study"] == [
-        "cro.",
-        "sponsor.",
-        "smo.",
-    ]
+    assert "site.clinical" in response.json["roles"]
     assert any(
         entry["id"] == "platform.admin" and entry["label"]
         for entry in response.json["role_definitions"]
@@ -522,6 +553,7 @@ def test_list_roles_union_for_multi_tier_jwt(mock_load_user, client, rsa_keypair
     roles = response.json["roles"]
     assert "platform.admin" in roles
     assert "site.clinical" in roles
+    assert "patient.self" in roles
 
 
 @patch("src.services.user_service.provision_user_identity")
@@ -593,20 +625,25 @@ def test_provision_put_validates_required_fields(client, rsa_keypair):
     )
 
     assert response.status_code == 400
-    assert "missing required fields" in response.json["message"]
+    assert "idp_id" in response.json["message"]
 
 
-def test_validate_update_payload_branch_errors():
-    assert user_routes._validate_update_payload({}, self_service=False) == "empty body"
-    assert "tenant_uuid" in user_routes._validate_update_payload(
-        {"tenant_uuid": "not-a-uuid"},
-        self_service=False,
-    )
-    assert user_routes._validate_update_payload(
-        {"tos_accepted": False},
-        self_service=True,
-    ) == "tos_accepted may only be set to true"
-    assert user_routes._validate_update_payload({"tos_accepted": True}, self_service=True) is None
+def test_openapi_patch_rejects_invalid_tenant_uuid():
+    from pathlib import Path
+
+    spec = load_openapi_spec(OPENAPI_PATH)
+    schema = spec["components"]["schemas"]["UserUpdateRequest"]
+    with pytest.raises(ValueError, match="tenant_uuid"):
+        validate_request_body({"tenant_uuid": "not-a-uuid"}, schema, spec)
+
+
+def test_openapi_patch_rejects_tos_false():
+    from pathlib import Path
+
+    spec = load_openapi_spec(OPENAPI_PATH)
+    schema = spec["components"]["schemas"]["UserUpdateRequest"]
+    with pytest.raises(ValueError, match="tos_accepted"):
+        validate_request_body({"tos_accepted": False}, schema, spec)
 
 
 @patch("src.services.user_service.update_user")
@@ -624,52 +661,89 @@ def test_patch_self_accepts_tos(mock_load_user, mock_update, client, rsa_keypair
     assert response.status_code == 200
     assert response.json["tos_accepted"] is True
     mock_update.assert_called_once()
-    assert mock_update.call_args.kwargs["self_service"] is True
 
 
-def test_validate_create_payload_branch_errors():
-    valid = {
+def test_openapi_create_requires_profile_fields():
+    from pathlib import Path
+
+    spec = load_openapi_spec(OPENAPI_PATH)
+    schema = spec["components"]["schemas"]["UserCreateRequest"]
+    with pytest.raises(ValueError):
+        validate_request_body({"first_name": "Jordan"}, schema, spec)
+
+
+def test_openapi_create_requires_tenant_and_roles():
+    spec = load_openapi_spec(OPENAPI_PATH)
+    schema = spec["components"]["schemas"]["UserCreateRequest"]
+    base = {
         "first_name": "Jordan",
         "last_name": "Lee",
         "email": "jordan@example.com",
     }
-    assert user_routes._validate_create_payload({}) == "body must be a JSON object"
-    assert "missing required fields" in user_routes._validate_create_payload({"first_name": "Jordan"})
-    assert user_routes._validate_create_payload({**valid, "roles": ["patient.self"]}) is None
-    assert user_routes._validate_create_payload({**valid, "uuid": OTHER}) is None
-    assert user_routes._validate_create_payload({**valid, "idp_id": "demo_patient"}) is None
-    assert user_routes._validate_create_payload({**valid, "uuid": "not-a-uuid"}) == "uuid must be a UUID"
-    assert user_routes._validate_create_payload({**valid, "roles": "patient.self"}) == (
-        "roles must be an array of strings"
+    with pytest.raises(ValueError, match="tenant_uuid"):
+        validate_request_body({**base, "roles": ["patient.self"]}, schema, spec)
+    with pytest.raises(ValueError, match="roles"):
+        validate_request_body({**base, "tenant_uuid": TENANT}, schema, spec)
+
+
+@patch("src.services.user_service.get_user_or_404")
+def test_create_user_rejects_missing_tenant_or_roles(mock_get_principal, client, rsa_keypair):
+    mock_get_principal.return_value = _sample_user()
+    token = _token(rsa_keypair, sub=USER, actors=["clinician"])
+    headers = {"Authorization": f"Bearer {token}", "X-Active-Actor": "clinician"}
+    base = {
+        "first_name": "Jordan",
+        "last_name": "Lee",
+        "email": "jordan@example.com",
+    }
+    missing_tenant = client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={**base, "roles": ["patient.self"]},
     )
-    assert "unsupported fields" in user_routes._validate_create_payload({**valid, "site_uuid": TENANT})
+    assert missing_tenant.status_code == 400
+    assert "tenant_uuid" in missing_tenant.json["message"]
 
-
-@patch("src.authorization.entities.principal_tenant_uuid", return_value=TENANT)
-def test_resolve_create_tenant_defaults_to_actor(_mock_tenant):
-    tenant_uuid, error = user_routes._resolve_create_tenant(
-        {"first_name": "Jordan", "last_name": "Lee", "email": "jordan@example.com"},
+    missing_roles = client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={**base, "tenant_uuid": TENANT},
     )
-    assert error is None
-    assert tenant_uuid == TENANT
+    assert missing_roles.status_code == 400
+    assert "roles" in missing_roles.json["message"]
 
 
-@patch("src.authorization.entities.principal_tenant_uuid", return_value=TENANT)
-def test_resolve_create_tenant_rejects_cross_tenant(_mock_tenant):
-    other = "00000000-0000-7000-8000-000000000099"
-    tenant_uuid, error = user_routes._resolve_create_tenant({"tenant_uuid": other})
-    assert tenant_uuid is None
-    assert error == "tenant_uuid must match your tenant"
+def test_finalize_create_body_normalizes_fields():
+    planned = user_service.finalize_create_body(
+        {
+            "first_name": "Jordan",
+            "last_name": "Lee",
+            "email": "jordan@example.com",
+            "tenant_uuid": TENANT,
+            "roles": ["platform.admin"],
+        },
+    )
+    assert planned["tenant_uuid"] == TENANT
+    assert planned["roles"] == ["platform.admin"]
 
 
-@patch("src.authorization.entities.principal_tenant_uuid", return_value=None)
-def test_resolve_create_tenant_requires_explicit_tenant(_mock_tenant):
-    tenant_uuid, error = user_routes._resolve_create_tenant({})
-    assert tenant_uuid is None
-    assert error == "tenant_uuid is required"
+def test_finalize_create_body_requires_tenant():
+    with pytest.raises(ValueError, match="tenant_uuid is required"):
+        user_service.finalize_create_body(
+            {
+                "first_name": "Jordan",
+                "last_name": "Lee",
+                "email": "jordan@example.com",
+                "roles": ["platform.admin"],
+            },
+        )
 
 
-def test_validate_provision_payload_branch_errors():
+def test_openapi_provision_rejects_invalid_fields():
+    from pathlib import Path
+
+    spec = load_openapi_spec(OPENAPI_PATH)
+    schema = spec["components"]["schemas"]["UserProvisionRequest"]
     valid = {
         "tenant_uuid": TENANT,
         "idp_id": "user_abc",
@@ -677,21 +751,12 @@ def test_validate_provision_payload_branch_errors():
         "last_name": "Operator",
         "email": "sam@example.com",
     }
-    assert user_routes._validate_provision_payload("not-a-uuid", valid) == "user_uuid must be a UUID"
-    assert "unsupported fields" in user_routes._validate_provision_payload(
-        USER,
-        {**valid, "roles": []},
-    )
-    assert user_routes._validate_provision_payload(
-        USER,
-        {**valid, "tenant_uuid": "not-a-uuid"},
-    ) == "tenant_uuid must be a UUID"
-    assert user_routes._validate_provision_payload(USER, {**valid, "idp_id": ""}) == "idp_id is required"
-    assert "email" in user_routes._validate_provision_payload(USER, {**valid, "email": 123})
-    assert user_routes._validate_provision_payload(USER, {**valid, "actors": ["operator"]}) is None
-    assert user_routes._validate_provision_payload(USER, {**valid, "actors": "operator"}) == (
-        "actors must be an array of strings"
-    )
+    with pytest.raises(ValueError, match="tenant_uuid"):
+        validate_request_body({**valid, "tenant_uuid": "not-a-uuid"}, schema, spec)
+    with pytest.raises(ValueError, match="idp_id"):
+        validate_request_body({**valid, "idp_id": ""}, schema, spec)
+    with pytest.raises(ValueError, match="roles"):
+        validate_request_body({**valid, "roles": ["operator"]}, schema, spec)
 
 
 @patch("src.services.user_service.get_user_audits")
@@ -704,10 +769,23 @@ def test_get_user_audits_route_returns_items(
     client,
     rsa_keypair,
 ):
-    mock_get_user.return_value = _sample_user()
+    principal = _sample_user(USER)
+    target = _sample_user(OTHER)
+
+    def load_user(user_id: str) -> dict:
+        if user_id == USER:
+            return principal
+        return target
+
+    mock_get_user.side_effect = load_user
     mock_session.return_value.__enter__.return_value = MagicMock()
     mock_get_audits.return_value = ([], 0)
-    token = _token(rsa_keypair, sub=USER, actors=["operator"])
+    token = _token(
+        rsa_keypair,
+        sub=USER,
+        actors=["operator"],
+        roles=["admin"],
+    )
 
     response = client.get(
         f"/api/v1/users/{OTHER}/audits",
@@ -737,12 +815,7 @@ def test_get_user_audits_allows_jwt_org_role_slugs(
     mock_get_user.side_effect = load_user
     mock_session.return_value.__enter__.return_value = MagicMock()
     mock_get_audits.return_value = ([{"history_uuid": str(uuid.uuid4()), "change_type": 2}], 1)
-    token = _token(
-        rsa_keypair,
-        sub=USER,
-        actors=["operator"],
-        roles=["platform.admin"],
-    )
+    token = _admin_token(rsa_keypair, sub=USER)
 
     response = client.get(
         f"/api/v1/users/{OTHER}/audits",
@@ -757,7 +830,7 @@ def test_get_user_audits_allows_jwt_org_role_slugs(
 @patch("src.routes.users.SessionLocal")
 def test_provision_put_conflict(mock_session, mock_provision, client, rsa_keypair):
     mock_session.return_value.__enter__.return_value = MagicMock()
-    mock_provision.side_effect = user_routes.user_service.ConflictError()
+    mock_provision.side_effect = user_service.ConflictError()
     token = _service_token(rsa_keypair)
 
     response = client.put(
