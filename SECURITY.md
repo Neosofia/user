@@ -2,7 +2,7 @@
 
 This service follows the [Neosofia Service Security Baseline](https://github.com/Neosofia/templates/blob/main/python/service/SECURITY.md), which defines the controls required of every platform web service. This document covers only deviations and concerns specific to the User Service.
 
-The User Service is the **Tier-2 source of truth** for **`roles[]`** on human principals (registry slugs `{tenant_type}.{role}`, e.g. `platform.admin`). **Tenant type** is owned by Authentication (`tenants.type`, JWT `neosofia:tenant_type`). Site, trial, and other domain scope live in downstream services—not in this registry. It validates platform JWTs but does **not** issue tokens or run the identity provider login flow.
+The User Service is the **Tier-2 source of truth** for **`roles[]`** on human principals (registry slugs `{family}.{short}`, e.g. `platform.admin`, `patient.self`). Slug **family** (the prefix before the dot) groups roles for Cedar; it is not required to equal Authentication **tenant type** (`tenants.type`, JWT `neosofia:tenant_type`). Catalog `tenant_types` maps org kind to which full slugs may be assigned (e.g. `patient.self` on **site** tenants). Site, trial, and other domain scope live in downstream services—not in this registry. It validates platform JWTs but does **not** issue tokens or run the identity provider login flow.
 
 To report any security-related issue please email security@neosofia.tech — do not create a public issue.
 
@@ -28,8 +28,8 @@ To report any security-related issue please email security@neosofia.tech — do 
 |----------|---------|
 | Caller identity | Platform JWT from **Authentication**; human `sub` equals `users.uuid`, service `sub` equals caller slug |
 | Tier-1 gate (list/admin update) | JWT must include Tier-1 actor `operator` (`authentication-in-the-middle`) |
-| Tier-2 gate (read/update/audits) | Cedar in `policies/policy.cedar` (`users` namespace), evaluated in-process via `authorization-in-the-middle` |
-| Cedar principal | Row loaded by JWT `sub` through `resolve_principal()`; no row → authorization path fails closed |
+| Tier-2 gate (read/update/audits) | Cedar in `policies/*.cedar` (`users` namespace), evaluated in-process via `authorization-in-the-middle` |
+| Cedar principal | Built from platform JWT claims in `resolve_principal()` (same pattern as Authentication) |
 | Internal provisioning | Service token with `sub=authentication`, `aud=user`, and `neosofia:token_type=service` |
 | Public surface | Only `GET /health` is unauthenticated |
 
@@ -43,12 +43,12 @@ Policy bundle: `policies/*.cedar` only (no Cedar schema file). Entity payloads a
 |------|-----|--------|----------|
 | Self-service | Principal | `user:read`, `user:update` | Own `users::User` |
 | Platform admin | Tier-1 `operator` + JWT `tenant_type=platform` + role `admin` | `user:read`, `user:update`, `user:list` | Same-tenant users / catalog |
-| Enterprise admin | Tier-1 `operator` + matching `tenant_type` + `admin` / `clinical-ops` / `systems` (see `policy.cedar`) | `user:read`, `user:update`, `user:list` | Same-tenant users / catalog |
+| Enterprise admin | Tier-1 `operator` + matching `tenant_type` + `admin` / `clinical-ops` / `systems` (see role Cedar files) | `user:read`, `user:update`, `user:list` | Same-tenant users / catalog |
 | Site admin | `tenant_type=site` + `admin` / `research` / `clinical` | `user:read`, `user:update`, `user:list` | Same-tenant users / catalog |
-| Role picklists | Any authenticated principal | `role_catalog:read` | `users::RoleCatalog` |
+| Role picklists | Any authenticated principal | `role:list` | `users::RoleCatalog` |
 | Login provisioning | `authentication` service token | `user:provision` | `users::UserProvisioning` |
 
-**Defense in depth:** Registry administration requires matching **tenant type**, **roles** (from JWT `neosofia:roles` and/or this registry), and same **tenant** as the target row. **Role assignment** on create/update is enforced in Cedar (`policies/policy.cedar`; proposed slugs → `roleNamespaces` on the write entity). Catalog JSON lists valid slug vocabulary; `validate_roles` rejects unknown slugs at persistence. Self-service PATCH field allowlist remains in application code. See [ADR-0014](https://github.com/Neosofia/cdp/blob/main/architecture/adrs/0014-tenant-types-and-org-roles.md).
+**Defense in depth:** Registry administration requires matching **tenant type**, **roles** (from JWT `neosofia:roles` and/or this registry), and same **tenant** as the target row. **Role assignment** on create/update is enforced in Cedar (`policies/*.cedar`; proposed slugs → `roleNamespaces` on the write entity). Catalog JSON lists valid slug vocabulary; `validate_roles` rejects unknown slugs at persistence. Self-service PATCH field allowlist remains in application code. See [ADR-0014](https://github.com/Neosofia/cdp/blob/main/architecture/adrs/0014-tenant-types-and-org-roles.md).
 
 ---
 

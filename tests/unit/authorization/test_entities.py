@@ -1,10 +1,9 @@
-from unittest.mock import patch
-
 import pytest
 from flask import g
-from werkzeug.exceptions import NotFound
 
 from authorization_in_the_middle.entities import ID_PLACEHOLDER
+from authorization_in_the_middle.flask_identity import principal_cedar_attrs
+from authorization_in_the_middle.rest_defaults import synthesize_member_builder, synthesize_write_builder
 
 from src.authorization import entities
 from src.bootstrap.config import settings
@@ -32,44 +31,52 @@ def test_registry_user_cedar_attrs_keep_full_role_slugs():
     assert attrs["tokenType"] == "human"
 
 
-def test_principal_cedar_attrs_use_jwt_short_roles(app):
-    row = {"uuid": USER, "tenant_uuid": TENANT, "roles": ["platform.admin"]}
+def test_principal_cedar_attrs_use_jwt_short_roles():
     claims = {
         "sub": USER,
         _claim("actors"): ["operator"],
         _claim("roles"): ["admin"],
         _claim("tenant_type"): "platform",
+        _claim("tenant_uuid"): TENANT,
     }
-    attrs = entities.principal_cedar_attrs(row, claims)
+    attrs = principal_cedar_attrs(
+        claims,
+        actor_classes=entities.tier1_actor_classes(),
+    )
     assert attrs["roles"] == ["admin"]
     assert attrs["tenantType"] == "platform"
+    assert attrs["tenantId"] == TENANT
     assert attrs["isOperator"] is True
 
 
-def test_build_user_resource_entity_uses_registry_row():
+def test_synthesized_member_builder_uses_registry_attrs():
+    builder = synthesize_member_builder(
+        namespace=entities.NAMESPACE,
+        model_name="user",
+        id_arg="user_uuid",
+        entities_mod=entities,
+    )
     patient = {
         "uuid": PATIENT,
         "tenant_uuid": TENANT,
         "roles": ["patient.self"],
     }
-    entity = entities.build_user_resource_entity(PATIENT, patient)
+    entity = builder(PATIENT, patient)
     assert entity["attrs"]["roles"] == ["patient.self"]
     assert entity["attrs"]["tenantId"] == TENANT
 
 
-@patch(
-    "src.services.user_service.get_user_or_404",
-    return_value={"uuid": USER, "tenant_uuid": TENANT, "roles": ["platform.admin"]},
-)
-def test_resolve_principal_uses_registry_row(mock_get_user, app):
+def test_resolve_principal_uses_jwt_claims(app):
     with app.test_request_context("/"):
         g.jwt_claims = {
             "sub": USER,
             _claim("actors"): ["operator"],
             _claim("roles"): ["admin"],
             _claim("tenant_type"): "platform",
+            _claim("tenant_uuid"): TENANT,
         }
         entity = entities.resolve_principal()
+    assert entity["uid"]["__entity"]["id"] == USER
     assert entity["attrs"]["roles"] == ["admin"]
     assert entity["attrs"]["tenantId"] == TENANT
     assert entity["attrs"]["isOperator"] is True
@@ -86,24 +93,17 @@ def test_resolve_principal_service_token(app):
     assert entity["attrs"]["serviceSlug"] == "authentication"
 
 
-@patch("src.services.user_service.get_user_or_404", side_effect=NotFound())
-def test_resolve_principal_falls_back_when_registry_row_missing(mock_get_user, app):
-    with app.test_request_context("/"):
-        g.jwt_claims = {
-            "sub": USER,
-            _claim("tenant_uuid"): TENANT,
-            _claim("actors"): ["patient"],
-        }
-        entity = entities.resolve_principal()
-    assert entity["attrs"]["tenantId"] == TENANT
-    assert entity["attrs"]["isPatient"] is True
-
-
-def test_build_write_user_entity_resolves_placeholder_uuid():
+def test_synthesized_write_builder_resolves_placeholder_uuid():
+    builder = synthesize_write_builder(
+        namespace=entities.NAMESPACE,
+        model_name="user",
+        id_arg="user_uuid",
+        entities_mod=entities,
+    )
     record = {
         "uuid": ID_PLACEHOLDER,
         "tenant_uuid": TENANT,
         "roles": ["patient.self"],
     }
-    entity = entities.build_write_user_entity(record)
+    entity = builder(record)
     assert entity["attrs"]["roles"] == ["patient.self"]

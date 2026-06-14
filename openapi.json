@@ -388,6 +388,7 @@
           },
           "tenant_types": {
             "type": "object",
+            "description": "Org kind (Authentication tenants.type) to assignable tier-2 role slugs. Values are full slugs (e.g. patient.self on site tenants); slug namespace is independent of tenant type.",
             "additionalProperties": {
               "type": "array",
               "items": { "type": "string" }

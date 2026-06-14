@@ -13,7 +13,7 @@ bp = Blueprint("roles", __name__, url_prefix="/api/v1/roles")
 
 
 @bp.route("", methods=["GET"])
-@with_security(action='Action::"role_catalog:read"', rate_limit=settings.user_read_rate_limit)
+@with_security(rate_limit=settings.user_read_rate_limit)
 def list_roles():
     roles = sorted(role_ids())
     return jsonify({

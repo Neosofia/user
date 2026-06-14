@@ -1,10 +1,11 @@
 import pytest
 
-from src.services import role_catalog as role_catalog_module
 from src.services.role_catalog import (
+    DEFAULT_ROLE_CATALOG_PATH,
     load_catalog_file,
     merge_catalogs,
     role_ids,
+    tenant_type_roles,
     validate_roles,
 )
 
@@ -24,13 +25,19 @@ def test_default_catalog_includes_platform_admin():
     assert "platform.admin" in role_ids()
 
 
+def test_default_catalog_assigns_patient_roles_on_site():
+    site_roles = tenant_type_roles()["site"]
+    assert "patient.self" in site_roles
+    assert "site.clinical" in site_roles
+
+
 def test_catalog_role_objects_with_labels(tmp_path):
     path = tmp_path / "roles.json"
     path.write_text(
         """
         {
           "tenant_types": {
-            "site": { "roles": ["clinical"] }
+            "site": { "roles": ["site.clinical", "patient.self"] }
           },
           "roles": [
             "site.clinical",
@@ -58,7 +65,9 @@ def test_catalog_overlay_merges_roles(tmp_path):
         """
         {
           "tenant_types": {
-            "site": { "roles": ["admin", "research", "clinical", "readonly"] }
+            "site": {
+              "roles": ["site.admin", "site.research", "site.clinical", "site.readonly"]
+            }
           },
           "roles": ["site.admin"]
         }
@@ -66,7 +75,10 @@ def test_catalog_overlay_merges_roles(tmp_path):
         encoding="utf-8",
     )
 
-    merged = merge_catalogs(role_catalog_module.role_catalog(), load_catalog_file(overlay_path))
+    merged = merge_catalogs(
+        load_catalog_file(DEFAULT_ROLE_CATALOG_PATH),
+        load_catalog_file(overlay_path, validate_assignable_refs=False),
+    )
 
     assert "site.clinical" in merged.role_ids
     assert "site.admin" in merged.role_ids
@@ -83,12 +95,27 @@ def test_catalog_file_rejects_non_object_json(tmp_path):
 def test_catalog_file_rejects_invalid_shapes(tmp_path):
     path = tmp_path / "roles.json"
     path.write_text(
-        '{"tenant_types": {"platform": {"roles": ["admin"]}}, "roles": "platform.admin"}',
+        '{"tenant_types": {"platform": {"roles": ["platform.admin"]}}, "roles": "platform.admin"}',
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="roles list"):
         load_catalog_file(path)
 
     path.write_text('{"tenant_types": {}, "roles": ["bad role"]}', encoding="utf-8")
-    with pytest.raises(ValueError, match="invalid org role"):
+    with pytest.raises(ValueError, match="invalid role slug"):
+        load_catalog_file(path)
+
+
+def test_catalog_rejects_unknown_assignable_slug(tmp_path):
+    path = tmp_path / "roles.json"
+    path.write_text(
+        """
+        {
+          "tenant_types": { "site": { "roles": ["site.missing"] } },
+          "roles": ["site.clinical"]
+        }
+        """,
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="tenant_types reference unknown roles"):
         load_catalog_file(path)

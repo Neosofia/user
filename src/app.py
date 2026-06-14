@@ -57,7 +57,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     evaluator = CedarEvaluator(policy_source=policy_source)
 
     # Public routes (no Cedar): health.
-    # Protected routes use @with_security + policies/policy.cedar: users, roles.
+    # Protected routes use @with_security + policies/*.cedar: users, roles.
     from src.authorization.entities import NAMESPACE
 
     app.config["CEDAR_NAMESPACE"] = NAMESPACE

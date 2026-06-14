@@ -1,8 +1,9 @@
 import base64
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 
@@ -14,6 +15,16 @@ def _validate_database_urls(migration_database_url: str, app_database_url: str) 
             "MIGRATION_DATABASE_URL and APP_DATABASE_URL must use different users; "
             f"both are {migration.username!r}"
         )
+
+
+def _csv_string_list(value: object, *, allow_none: bool = False) -> list[str] | None:
+    if value is None:
+        return None if allow_none else []
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(part).strip() for part in value if str(part).strip()]
+    raise ValueError("expected comma-separated string or list of strings")
 
 
 class Settings(BaseSettings):
@@ -39,7 +50,7 @@ class Settings(BaseSettings):
     # JWT authentication settings
     jwt_public_key: str | None = Field(default=None)
     jwt_jwks_uri: str | None = Field(default=None)
-    jwt_audience: str | list[str] = Field(default="user")
+    jwt_audience: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["user"])
     jwt_claim_namespace: str = Field(
         default="neosofia",
         description="Prefix for custom JWT claims (must match Authentication JWT_CLAIM_NAMESPACE)",
@@ -74,12 +85,9 @@ class Settings(BaseSettings):
         return str(value).strip()
 
     @field_validator("jwt_audience", mode="before")
-    def normalize_jwt_audience(cls, value: str | list[str] | None) -> list[str] | None:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            return [entry.strip() for entry in value.split(",") if entry.strip()]
-        return [entry.strip() for entry in value if isinstance(entry, str) and entry.strip()]
+    @classmethod
+    def normalize_jwt_audience(cls, value: object) -> list[str] | None:
+        return _csv_string_list(value, allow_none=True)
 
     @field_validator("role_catalog_overlay", mode="before")
     @classmethod

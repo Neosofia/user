@@ -71,12 +71,7 @@ def list_users_platform_catalog():
 
 
 @tenant_users_bp.route("/<tenant_uuid>/users", methods=["GET"])
-@with_security(
-    rate_limit=settings.user_read_rate_limit,
-    action='Action::"user:list"',
-    resource_fn=auth_entities.tenant_user_catalog_resource_uid,
-    entities_fn=auth_entities.tenant_user_list_entities,
-)
+@with_security(rate_limit=settings.user_read_rate_limit)
 def list_tenant_users(tenant_uuid: str):
     parsed_tenant = _parse_tenant_uuid(tenant_uuid)
     if parsed_tenant is None:
@@ -190,8 +185,8 @@ def get_user_audits(user_uuid: str):
 @bp.route("/<user_uuid>", methods=["PUT"])
 @with_security(
     action='Action::"user:provision"',
-    resource_fn=auth_entities.user_provisioning_resource_uid,
-    entities_fn=auth_entities.user_provisioning_entities,
+    resource_type="UserProvisioning",
+    catalog_id=auth_entities.USER_PROVISIONING_ID,
     enforce_active_actor=False,
     validate_openapi=True,
     rate_limit=settings.user_write_rate_limit,

@@ -2,6 +2,12 @@
 
 What changed for user-service consumers. Deploy: [INSTALLATION_PLAN.md](INSTALLATION_PLAN.md).
 
+## [Unreleased]
+
+### Changed
+
+- Role catalog decouples **role slugs** from **tenant type**: `roles[]` is the vocabulary; `tenant_types.{kind}.roles` lists full assignable slugs per org kind (e.g. `patient.self` under `site`). Loader validates shape and referential integrity only — no domain constants in code. `GET /api/v1/roles` `tenant_types` values are full slugs, not short names.
+
 ## [0.7.1] - 2026-06-13
 
 ### Changed

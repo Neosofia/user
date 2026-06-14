@@ -12,9 +12,6 @@ from src.bootstrap.config import settings
 
 DEFAULT_ROLE_CATALOG_PATH = Path(__file__).resolve().parents[2] / "roles" / "default.json"
 
-# Registry slugs under ``patient.*``; not an org ``tenant_types`` key.
-PATIENT_ROLE_NAMESPACE = "patient"
-
 
 @dataclass(frozen=True)
 class RoleCatalog:
@@ -28,22 +25,50 @@ def _default_role_label(role_id: str) -> str:
     return short.replace("-", " ").title()
 
 
-def _role_id(value: object, allowed_namespaces: frozenset[str]) -> str:
+def _role_slug(value: object) -> str:
     if isinstance(value, str):
         role_id = value.strip()
     elif isinstance(value, dict):
         role_id = str(value.get("id", "")).strip()
     else:
         role_id = ""
-    if not role_id or any(char.isspace() for char in role_id) or "." not in role_id:
-        raise ValueError(f"invalid org role id: {value!r}")
     namespace, _, short = role_id.partition(".")
-    if short and namespace in allowed_namespaces:
-        return role_id
-    raise ValueError(f"invalid org role id: {value!r}")
+    if not role_id or any(char.isspace() for char in role_id) or not namespace or not short:
+        raise ValueError(f"invalid role slug: {value!r}")
+    return role_id
 
 
-def _tenant_types_from_mapping(data: dict[str, Any], source: Path) -> dict[str, frozenset[str]]:
+def _role_labels_from_list(raw_roles: list[object], source: Path) -> dict[str, str]:
+    role_labels: dict[str, str] = {}
+    for role in raw_roles:
+        if isinstance(role, str):
+            role_id = _role_slug(role)
+            role_labels[role_id] = _default_role_label(role_id)
+            continue
+        if isinstance(role, dict):
+            role_id = _role_slug(role)
+            raw_label = role.get("label")
+            label = str(raw_label).strip() if raw_label is not None else ""
+            role_labels[role_id] = label or _default_role_label(role_id)
+            continue
+        raise ValueError(f"{source} roles entries must be strings or objects with id")
+    return role_labels
+
+
+def _assert_assignable_refs_known(
+    tenant_types: dict[str, frozenset[str]],
+    role_ids: frozenset[str],
+    source: str | Path,
+) -> None:
+    unknown = sorted({slug for slugs in tenant_types.values() for slug in slugs} - role_ids)
+    if unknown:
+        raise ValueError(f"{source} tenant_types reference unknown roles: {unknown}")
+
+
+def _assignable_roles_by_tenant_type(
+    data: dict[str, Any],
+    source: Path,
+) -> dict[str, frozenset[str]]:
     raw = data.get("tenant_types")
     if not isinstance(raw, dict):
         raise ValueError(f"{source} must contain tenant_types object")
@@ -59,60 +84,41 @@ def _tenant_types_from_mapping(data: dict[str, Any], source: Path) -> dict[str, 
             raise ValueError(f"tenant_types.{key}.roles must be a list")
         roles: list[str] = []
         for raw_role in raw_roles:
-            short = str(raw_role).strip()
-            if not short:
-                raise ValueError(f"invalid org role for {key}: {raw_role!r}")
-            roles.append(short)
+            slug = _role_slug(raw_role)
+            roles.append(slug)
         tenant_types[key] = frozenset(roles)
+
     return tenant_types
 
 
-def _role_entry(
-    role: object,
+def _catalog_from_mapping(
+    data: dict[str, Any],
     source: Path,
-    allowed_namespaces: frozenset[str],
-) -> tuple[str, str]:
-    if isinstance(role, str):
-        role_id = _role_id(role, allowed_namespaces)
-        return role_id, _default_role_label(role_id)
-    if isinstance(role, dict):
-        role_id = _role_id(role, allowed_namespaces)
-        raw_label = role.get("label")
-        label = str(raw_label).strip() if raw_label is not None else ""
-        return role_id, label or _default_role_label(role_id)
-    raise ValueError(f"{source} roles entries must be strings or objects with id")
-
-
-def _allowed_namespaces(tenant_types: dict[str, frozenset[str]]) -> frozenset[str]:
-    return frozenset(tenant_types.keys()) | frozenset({PATIENT_ROLE_NAMESPACE})
-
-
-def _catalog_from_mapping(data: dict[str, Any], source: Path) -> RoleCatalog:
-    tenant_types = _tenant_types_from_mapping(data, source)
-    allowed_namespaces = _allowed_namespaces(tenant_types)
-
+    *,
+    validate_assignable_refs: bool = True,
+) -> RoleCatalog:
     raw_roles = data.get("roles")
     if not isinstance(raw_roles, list):
         raise ValueError(f"{source} must contain a roles list")
-    role_labels: dict[str, str] = {}
-    for role in raw_roles:
-        role_id, label = _role_entry(role, source, allowed_namespaces)
-        role_labels[role_id] = label
-    roles = frozenset(role_labels)
+    role_labels = _role_labels_from_list(raw_roles, source)
+    role_ids_set = frozenset(role_labels)
+    tenant_types = _assignable_roles_by_tenant_type(data, source)
+    if validate_assignable_refs:
+        _assert_assignable_refs_known(tenant_types, role_ids_set, source)
 
     return RoleCatalog(
-        role_ids=roles,
+        role_ids=role_ids_set,
         tenant_types=tenant_types,
         role_labels=role_labels,
     )
 
 
-def load_catalog_file(path: Path) -> RoleCatalog:
+def load_catalog_file(path: Path, *, validate_assignable_refs: bool = True) -> RoleCatalog:
     with path.open(encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"{path} must be a JSON object")
-    return _catalog_from_mapping(data, path)
+    return _catalog_from_mapping(data, path, validate_assignable_refs=validate_assignable_refs)
 
 
 def merge_catalogs(default: RoleCatalog, overlay: RoleCatalog | None) -> RoleCatalog:
@@ -123,18 +129,24 @@ def merge_catalogs(default: RoleCatalog, overlay: RoleCatalog | None) -> RoleCat
         tenant_types[tenant_type] = roles | tenant_types.get(tenant_type, frozenset())
     role_labels = dict(default.role_labels)
     role_labels.update(overlay.role_labels)
-    return RoleCatalog(
+    merged = RoleCatalog(
         role_ids=frozenset(default.role_ids | overlay.role_ids),
         tenant_types=tenant_types,
         role_labels=role_labels,
     )
+    _assert_assignable_refs_known(merged.tenant_types, merged.role_ids, "merged role catalog")
+    return merged
 
 
 @lru_cache(maxsize=1)
 def role_catalog() -> RoleCatalog:
     default = load_catalog_file(DEFAULT_ROLE_CATALOG_PATH)
     overlay_path = settings.role_catalog_overlay
-    overlay = load_catalog_file(overlay_path) if overlay_path else None
+    overlay = (
+        load_catalog_file(overlay_path, validate_assignable_refs=False)
+        if overlay_path
+        else None
+    )
     return merge_catalogs(default, overlay)
 
 

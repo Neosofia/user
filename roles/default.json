@@ -1,19 +1,38 @@
 {
   "tenant_types": {
     "platform": {
-      "roles": ["admin", "audit"]
+      "roles": ["platform.admin", "platform.audit"]
     },
     "cro": {
-      "roles": ["admin", "clinical-ops", "systems", "monitor", "readonly"]
+      "roles": [
+        "cro.admin",
+        "cro.clinical-ops",
+        "cro.systems",
+        "cro.monitor",
+        "cro.readonly"
+      ]
     },
     "sponsor": {
-      "roles": ["admin", "clinical-ops", "systems", "oversight", "readonly"]
+      "roles": [
+        "sponsor.admin",
+        "sponsor.clinical-ops",
+        "sponsor.systems",
+        "sponsor.oversight",
+        "sponsor.readonly"
+      ]
     },
     "site": {
-      "roles": ["admin", "research", "clinical", "readonly"]
+      "roles": [
+        "site.admin",
+        "site.research",
+        "site.clinical",
+        "site.readonly",
+        "patient.self",
+        "patient.advocate"
+      ]
     },
     "smo": {
-      "roles": ["admin", "activation", "readonly"]
+      "roles": ["smo.admin", "smo.activation", "smo.readonly"]
     }
   },
   "roles": [
