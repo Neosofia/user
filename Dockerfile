@@ -9,8 +9,8 @@
 
 # cedarpy 4.8.1 needs the glibc manylinux wheel for attribute-based policy evaluation.
 ARG PYTHON_IMAGE=python:3.14-slim@sha256:d7a925f9eb9639a93e455b9f12c167569358818c0f62b51b88edbc8fcf34c421
-ARG CDP_USER_POLICIES_IMAGE=ghcr.io/neosofia/cdp-user-policies:v0.3.0
-FROM ${CDP_USER_POLICIES_IMAGE} AS cdp_user_policies
+ARG CDP_POLICIES_IMAGE=ghcr.io/neosofia/cdp-policies:v0.1.0
+FROM ${CDP_POLICIES_IMAGE} AS cdp_policies
 
 # SQL audit templates (same pattern as authentication)
 FROM ghcr.io/neosofia/sql-template:v0.6.0 AS audit-templates
@@ -45,7 +45,7 @@ COPY src ./src
 COPY tests ./tests
 COPY roles ./roles
 COPY policies ./policies
-COPY --from=cdp_user_policies /policies/ ./policies/
+COPY --from=cdp_policies /policies/user/role-catalog.json ./policies/role-catalog.json
 COPY openapi.json ./openapi.json
 
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -74,7 +74,7 @@ COPY alembic.ini ./alembic.ini
 COPY src ./src
 COPY roles ./roles
 COPY policies ./policies
-COPY --from=cdp_user_policies /policies/ ./policies/
+COPY --from=cdp_policies /policies/user/role-catalog.json ./policies/role-catalog.json
 COPY openapi.json ./openapi.json
 
 # Audit SQL applied by Alembic migration 000

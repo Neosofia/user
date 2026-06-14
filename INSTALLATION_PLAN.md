@@ -24,11 +24,11 @@ CDP stacks: see [CDP INSTALLATION_PLAN — Step 0](https://github.com/Neosofia/c
 
 ## user v0.8.0
 
-**Build identifiers:** Tag `user/v0.8.0`; SDK **`authorization-in-the-middle/v0.7.1`**; **cdp-user-policies v0.3.0**.
+**Build identifiers:** Tag `user/v0.8.0`; SDK **`authorization-in-the-middle/v0.7.1`**; **cdp-policies v0.1.0**.
 
 **Deploy:**
 
-1. Publish **cdp-user-policies v0.3.0** and rebuild user with `CDP_USER_POLICIES_IMAGE=ghcr.io/neosofia/cdp-user-policies:v0.3.0`.
+1. Publish **cdp-policies v0.1.0** and rebuild user with `CDP_POLICIES_IMAGE=ghcr.io/neosofia/cdp-policies:v0.1.0`.
 2. Deploy **user v0.8.0** (no new env vars).
 
 **Post-deploy verification:**

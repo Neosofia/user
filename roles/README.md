@@ -20,4 +20,4 @@ Partial overlay files may list `tenant_types` slugs that exist only in the base 
 ## Related
 
 - [ADR-0014](https://github.com/Neosofia/cdp/blob/main/architecture/adrs/0014-tenant-types-and-org-roles.md)
-- CDP labels overlay: [cdp/roles/user-catalog.overlay.json](https://github.com/Neosofia/cdp/blob/main/roles/user-catalog.overlay.json)
+- CDP labels: [cdp/policies/user/role-catalog.json](https://github.com/Neosofia/cdp/blob/main/policies/user/role-catalog.json)
