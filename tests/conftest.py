@@ -1,6 +1,8 @@
 import json
 import pytest
 import base64
+import shutil
+import tempfile
 from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -33,13 +35,43 @@ os.environ["MIGRATION_DATABASE_URL"] = "postgresql+psycopg://template:dummy@loca
 _tests_dir = Path(__file__).resolve().parent
 _repo_root = _tests_dir.parent
 _base_policies = _repo_root / "policies"
+_fixture_product_cedar = _tests_dir / "fixtures" / "policies" / "product"
+_cdp_product_cedar = _repo_root.parent / "cdp" / "policies" / "user" / "cedar"
+_cdp_role_catalog = _repo_root.parent / "cdp" / "policies" / "user" / "role-catalog.json"
+_fixture_role_catalog = _tests_dir / "fixtures" / "policies" / "role-catalog.json"
+
+
+def _product_cedar_sources() -> list[Path]:
+    if _cdp_product_cedar.is_dir():
+        return [_cdp_product_cedar]
+    if _fixture_product_cedar.is_dir():
+        return [_fixture_product_cedar]
+    return []
 
 
 def _configure_authorization_policies_dir() -> None:
+    product_sources = _product_cedar_sources()
+    if product_sources:
+        merged = Path(tempfile.mkdtemp(prefix="user-policies-"))
+        for cedar_file in _base_policies.glob("*.cedar"):
+            shutil.copy2(cedar_file, merged / cedar_file.name)
+        for source in product_sources:
+            for cedar_file in source.glob("*.cedar"):
+                shutil.copy2(cedar_file, merged / cedar_file.name)
+        os.environ["AUTHORIZATION_POLICIES_DIR"] = str(merged)
+        return
     os.environ["AUTHORIZATION_POLICIES_DIR"] = str(_base_policies)
 
 
+def _configure_role_catalog_overlay() -> None:
+    if _cdp_role_catalog.is_file():
+        os.environ["ROLE_CATALOG_OVERLAY"] = str(_cdp_role_catalog)
+    elif _fixture_role_catalog.is_file():
+        os.environ["ROLE_CATALOG_OVERLAY"] = str(_fixture_role_catalog)
+
+
 _configure_authorization_policies_dir()
+_configure_role_catalog_overlay()
 
 from src.app import create_app  # noqa: E402 — must import after env vars are set
 

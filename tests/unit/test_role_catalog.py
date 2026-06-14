@@ -1,7 +1,6 @@
 import pytest
 
 from src.services.role_catalog import (
-    DEFAULT_ROLE_CATALOG_PATH,
     load_catalog_file,
     merge_catalogs,
     role_ids,
@@ -21,14 +20,14 @@ def test_validate_roles_rejects_unknown():
         validate_roles(["clinical.license.rn"])
 
 
-def test_default_catalog_includes_platform_admin():
+def test_merged_catalog_includes_product_roles():
     assert "platform.admin" in role_ids()
 
 
-def test_default_catalog_assigns_patient_roles_on_site():
-    site_roles = tenant_type_roles()["site"]
-    assert "patient.self" in site_roles
-    assert "site.clinical" in site_roles
+def test_merged_catalog_assigns_demo_roles_on_platform():
+    platform_roles = tenant_type_roles()["platform"]
+    assert "patient.self" in platform_roles
+    assert "site.clinical" in platform_roles
 
 
 def test_catalog_role_objects_with_labels(tmp_path):
@@ -51,16 +50,24 @@ def test_catalog_role_objects_with_labels(tmp_path):
     assert catalog.role_labels["patient.self"] == "Patient"
 
 
-def test_role_definition_falls_back_to_slug_label():
-    from src.services.role_catalog import role_definition
+def test_role_definition_falls_back_to_slug_label(tmp_path):
+    from src.services.role_catalog import _default_role_label, role_definition
+
+    path = tmp_path / "roles.json"
+    path.write_text('{"tenant_types": {}, "roles": ["site.clinical"]}', encoding="utf-8")
+    base = load_catalog_file(path)
+    assert base.role_labels["site.clinical"] == _default_role_label("site.clinical")
+    assert base.role_labels["site.clinical"] == "Clinical"
 
     entry = role_definition("platform.admin")
     assert entry["id"] == "platform.admin"
-    assert entry["label"] == "Admin"
+    assert entry["label"] == "Platform Admin"
 
 
 def test_catalog_overlay_merges_roles(tmp_path):
-    overlay_path = tmp_path / "roles.json"
+    base_path = tmp_path / "base.json"
+    base_path.write_text('{"tenant_types": {}, "roles": []}', encoding="utf-8")
+    overlay_path = tmp_path / "overlay.json"
     overlay_path.write_text(
         """
         {
@@ -69,14 +76,14 @@ def test_catalog_overlay_merges_roles(tmp_path):
               "roles": ["site.admin", "site.research", "site.clinical", "site.readonly"]
             }
           },
-          "roles": ["site.admin"]
+          "roles": ["site.admin", "site.research", "site.clinical", "site.readonly"]
         }
         """,
         encoding="utf-8",
     )
 
     merged = merge_catalogs(
-        load_catalog_file(DEFAULT_ROLE_CATALOG_PATH),
+        load_catalog_file(base_path),
         load_catalog_file(overlay_path, validate_assignable_refs=False),
     )
 

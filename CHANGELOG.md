@@ -2,6 +2,14 @@
 
 What changed for user-service consumers. Deploy: [INSTALLATION_PLAN.md](INSTALLATION_PLAN.md).
 
+## [0.8.1] - 2026-06-14
+
+### Changed
+
+- CDP product Cedar (including demo sandbox) and the full role catalog ship from **`cdp-policies`** at image build. Generic Cedar remains in this repo (`policies/default.cedar` only). No base role catalog in the user repo.
+- Removed `policies/roles/default.json`; role vocabulary comes entirely from `ROLE_CATALOG_OVERLAY`.
+- Build arg **`USER_PRODUCT_POLICIES_IMAGE`** (default `ghcr.io/neosofia/cdp-policies:v0.2.0`) selects the product policy bundle; **`CDP_POLICIES_IMAGE`** remains a deprecated alias. Non-CDP deployments pass their own bundle image with the same `/policies/user/` layout.
+
 ## [0.8.0] - 2026-06-14
 
 ### Changed

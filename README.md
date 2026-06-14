@@ -45,7 +45,7 @@ operator.platform-admin            ← mesh / user admin (not a clinical title)
 operator.audit-reader
 ```
 
-The core service ships a generic role catalog in `roles/default.json`. Product deployments can mount a JSON overlay with domain-specific branches such as the clinical and research examples below.
+The user service ships no base role vocabulary. Product deployments set `ROLE_CATALOG_OVERLAY` (for CDP: `policies/user/role-catalog.json` from the policy bundle).
 
 ## Examples (from issue #11)
 

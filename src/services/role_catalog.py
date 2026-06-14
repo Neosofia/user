@@ -1,4 +1,4 @@
-"""Load and validate ``roles/default.json`` (+ optional deploy overlay). Vocabulary only — not authz."""
+"""Load optional base role catalog and merge deploy overlay. Vocabulary only — not authz."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 
 from src.bootstrap.config import settings
 
-DEFAULT_ROLE_CATALOG_PATH = Path(__file__).resolve().parents[2] / "roles" / "default.json"
+DEFAULT_ROLE_CATALOG_PATH = Path(__file__).resolve().parents[2] / "policies" / "roles" / "default.json"
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,16 @@ class RoleCatalog:
     role_ids: frozenset[str]
     tenant_types: dict[str, frozenset[str]]
     role_labels: dict[str, str]
+
+
+def _empty_role_catalog() -> RoleCatalog:
+    return RoleCatalog(role_ids=frozenset(), tenant_types={}, role_labels={})
+
+
+def _load_default_catalog() -> RoleCatalog:
+    if not DEFAULT_ROLE_CATALOG_PATH.is_file():
+        return _empty_role_catalog()
+    return load_catalog_file(DEFAULT_ROLE_CATALOG_PATH)
 
 
 def _default_role_label(role_id: str) -> str:
@@ -140,7 +150,7 @@ def merge_catalogs(default: RoleCatalog, overlay: RoleCatalog | None) -> RoleCat
 
 @lru_cache(maxsize=1)
 def role_catalog() -> RoleCatalog:
-    default = load_catalog_file(DEFAULT_ROLE_CATALOG_PATH)
+    default = _load_default_catalog()
     overlay_path = settings.role_catalog_overlay
     overlay = (
         load_catalog_file(overlay_path, validate_assignable_refs=False)

@@ -3,14 +3,15 @@
 #   docker build --target test .
 #   docker build --target runtime -t user:test .
 #
-# CDP product Cedar overrides are copied at build time from a published policy bundle
-# (same pattern as capabilities + cdp-ui-policies). CDP publishes the bundle only;
-# this service owns the runtime image.
+# Product Cedar and role catalog are copied at build time from a published policy bundle.
+# Override USER_PRODUCT_POLICIES_IMAGE for non-CDP deployments; default is cdp-policies.
 
 # cedarpy 4.8.1 needs the glibc manylinux wheel for attribute-based policy evaluation.
 ARG PYTHON_IMAGE=python:3.14-slim@sha256:d7a925f9eb9639a93e455b9f12c167569358818c0f62b51b88edbc8fcf34c421
-ARG CDP_POLICIES_IMAGE=ghcr.io/neosofia/cdp-policies:v0.1.0
-FROM ${CDP_POLICIES_IMAGE} AS cdp_policies
+ARG USER_PRODUCT_POLICIES_IMAGE=ghcr.io/neosofia/cdp-policies:v0.2.0
+# Deprecated alias — use USER_PRODUCT_POLICIES_IMAGE.
+ARG CDP_POLICIES_IMAGE=${USER_PRODUCT_POLICIES_IMAGE}
+FROM ${USER_PRODUCT_POLICIES_IMAGE} AS product_policies
 
 # SQL audit templates (same pattern as authentication)
 FROM ghcr.io/neosofia/sql-template:v0.6.0 AS audit-templates
@@ -43,9 +44,9 @@ FROM test-deps AS test
 COPY alembic.ini ./alembic.ini
 COPY src ./src
 COPY tests ./tests
-COPY roles ./roles
 COPY policies ./policies
-COPY --from=cdp_policies /policies/user/role-catalog.json ./policies/role-catalog.json
+COPY --from=product_policies /policies/user/role-catalog.json ./policies/role-catalog.json
+COPY --from=product_policies /policies/user/cedar/ ./policies/
 COPY openapi.json ./openapi.json
 
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -72,9 +73,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 COPY pyproject.toml ./pyproject.toml
 COPY alembic.ini ./alembic.ini
 COPY src ./src
-COPY roles ./roles
 COPY policies ./policies
-COPY --from=cdp_policies /policies/user/role-catalog.json ./policies/role-catalog.json
+COPY --from=product_policies /policies/user/role-catalog.json ./policies/role-catalog.json
+COPY --from=product_policies /policies/user/cedar/ ./policies/
 COPY openapi.json ./openapi.json
 
 # Audit SQL applied by Alembic migration 000

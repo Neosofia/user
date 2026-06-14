@@ -73,8 +73,8 @@ Row-level audit history is in `users_audit` (platform audit SQL); treat audit ta
 | `JWT_AUDIENCE` | Must include `user` |
 | Authentication `JWT_WEB_AUDIENCE` | Must list `user` so CDP and operators can call this API |
 | `JWT_JWKS_URI` / `JWT_PUBLIC_KEY` | Authentication service JWKS or PEM — same trust chain as other platform APIs |
-| `AUTHORIZATION_POLICIES_DIR` | Default `policies`; ship `policy.cedar` in the image |
-| `ROLE_CATALOG_OVERLAY` | Optional product-owned JSON file merged with `roles/default.json` at startup/request cache load |
+| `AUTHORIZATION_POLICIES_DIR` | Default `policies`; base Cedar in the image plus product rules from `USER_PRODUCT_POLICIES_IMAGE` at build |
+| `ROLE_CATALOG_OVERLAY` | Product-owned JSON file merged at startup; required for any tier-2 role vocabulary in production |
 | SDK wheels | Pin `authentication-in-the-middle` and `authorization-in-the-middle` to published release URLs in `pyproject.toml` (not local paths in production) |
 
 ---

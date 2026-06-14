@@ -1,0 +1,200 @@
+{
+  "tenant_types": {
+    "platform": {
+      "roles": [
+        "platform.admin",
+        "platform.audit",
+        "patient.self",
+        "site.clinical"
+      ]
+    },
+    "cro": {
+      "roles": [
+        "cro.admin",
+        "cro.clinical-ops",
+        "cro.systems",
+        "cro.monitor",
+        "cro.readonly"
+      ]
+    },
+    "sponsor": {
+      "roles": [
+        "sponsor.admin",
+        "sponsor.clinical-ops",
+        "sponsor.systems",
+        "sponsor.oversight",
+        "sponsor.readonly"
+      ]
+    },
+    "site": {
+      "roles": [
+        "site.admin",
+        "site.research",
+        "site.clinical",
+        "site.readonly",
+        "patient.self",
+        "patient.advocate"
+      ]
+    },
+    "smo": {
+      "roles": [
+        "smo.admin",
+        "smo.activation",
+        "smo.readonly"
+      ]
+    }
+  },
+  "roles": [
+    {
+      "id": "platform.admin",
+      "label": "Platform Admin"
+    },
+    {
+      "id": "platform.audit",
+      "label": "Platform Audit"
+    },
+    {
+      "id": "cro.admin",
+      "label": "CRO Admin"
+    },
+    {
+      "id": "cro.clinical-ops",
+      "label": "CRO Clinical Ops"
+    },
+    {
+      "id": "cro.systems",
+      "label": "CRO Systems"
+    },
+    {
+      "id": "cro.monitor",
+      "label": "CRO Monitor"
+    },
+    {
+      "id": "cro.readonly",
+      "label": "CRO Read Only"
+    },
+    {
+      "id": "sponsor.admin",
+      "label": "Sponsor Admin"
+    },
+    {
+      "id": "sponsor.clinical-ops",
+      "label": "Sponsor Clinical Ops"
+    },
+    {
+      "id": "sponsor.systems",
+      "label": "Sponsor Systems"
+    },
+    {
+      "id": "sponsor.oversight",
+      "label": "Sponsor Oversight"
+    },
+    {
+      "id": "sponsor.readonly",
+      "label": "Sponsor Read Only"
+    },
+    {
+      "id": "site.admin",
+      "label": "Site Admin"
+    },
+    {
+      "id": "site.research",
+      "label": "Site Research"
+    },
+    {
+      "id": "site.clinical",
+      "label": "Site Clinical"
+    },
+    {
+      "id": "site.readonly",
+      "label": "Site Read Only"
+    },
+    {
+      "id": "smo.admin",
+      "label": "SMO Admin"
+    },
+    {
+      "id": "smo.activation",
+      "label": "SMO Activation"
+    },
+    {
+      "id": "smo.readonly",
+      "label": "SMO Read Only"
+    },
+    {
+      "id": "patient.self",
+      "label": "Patient"
+    },
+    {
+      "id": "patient.advocate",
+      "label": "Patient Advocate"
+    }
+  ],
+  "default_roles_by_actor": {
+    "operator": "platform.admin",
+    "study": "sponsor.clinical-ops",
+    "clinician": "site.clinical",
+    "patient": "patient.self"
+  },
+  "job_functions": [
+    "clinical.function.ambulatory-care-specialist",
+    "clinical.function.ambulatory-nurse",
+    "clinical.function.anesthesiologist",
+    "clinical.function.attending-physician",
+    "clinical.function.bedside-nurse",
+    "clinical.function.behavioral-health-clinician",
+    "clinical.function.care-coordinator",
+    "clinical.function.care-navigator",
+    "clinical.function.case-management",
+    "clinical.function.charge-nurse",
+    "clinical.function.clinic-practice-administrator",
+    "clinical.function.clinical-nurse-specialist",
+    "clinical.function.crna",
+    "clinical.function.dietitian",
+    "clinical.function.discharge-planner",
+    "clinical.function.ed-charge-nurse",
+    "clinical.function.ed-physician",
+    "clinical.function.ed-staff-nurse",
+    "clinical.function.emergency-preparedness-coordinator",
+    "clinical.function.home-health-nurse",
+    "clinical.function.hospitalist",
+    "clinical.function.icu-nurse",
+    "clinical.function.intensivist",
+    "clinical.function.laboratory-technologist",
+    "clinical.function.medical-assistant",
+    "clinical.function.nurse-practitioner",
+    "clinical.function.nursing-coordinator",
+    "clinical.function.occupational-therapist",
+    "clinical.function.or-circulating-nurse",
+    "clinical.function.or-scrub-nurse",
+    "clinical.function.pacu-nurse",
+    "clinical.function.perioperative-coordinator",
+    "clinical.function.physical-therapist",
+    "clinical.function.physician-assistant",
+    "clinical.function.preop-nurse",
+    "clinical.function.primary-nurse",
+    "clinical.function.radiology-technologist",
+    "clinical.function.readonly",
+    "clinical.function.resident",
+    "clinical.function.respiratory-therapist",
+    "clinical.function.rpm-nurse",
+    "clinical.function.social-worker",
+    "clinical.function.speech-language-pathologist",
+    "clinical.function.staff-nurse",
+    "clinical.function.surgeon",
+    "clinical.function.surgical-tech",
+    "clinical.function.telehealth-coordinator",
+    "clinical.function.transition-nurse",
+    "clinical.function.triage-nurse",
+    "clinical.function.utilization-reviewer",
+    "clinical.function.virtual-care-nurse",
+    "research.function.clinical-research-nurse",
+    "research.function.crc",
+    "research.function.data-coordinator",
+    "research.function.pharmacovigilance-coordinator",
+    "research.function.pi",
+    "research.function.regulatory-coordinator",
+    "research.function.site-coordinator",
+    "research.function.sub-investigator"
+  ]
+}

@@ -60,7 +60,7 @@ def build_container_image():
             "--target",
             "runtime",
             "--build-arg",
-            f"CDP_POLICIES_IMAGE={POLICY_IMAGE_TAG}",
+            f"USER_PRODUCT_POLICIES_IMAGE={POLICY_IMAGE_TAG}",
             "-t",
             IMAGE_TAG,
             ".",

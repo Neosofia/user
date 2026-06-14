@@ -22,6 +22,28 @@ CDP stacks: see [CDP INSTALLATION_PLAN — Step 0](https://github.com/Neosofia/c
 
 ---
 
+## user v0.8.1
+
+**Build identifiers:** Tag `user/v0.8.1`; SDK **`authorization-in-the-middle/v0.7.1`**; **cdp-policies v0.2.0**.
+
+**Deploy:**
+
+1. Publish **cdp-policies v0.2.0** (adds `policies/user/cedar/`).
+2. Rebuild user with `USER_PRODUCT_POLICIES_IMAGE=ghcr.io/neosofia/cdp-policies:v0.2.0` (Dockerfile default).
+3. Deploy **user v0.8.1** (no new runtime env vars).
+
+**Post-deploy verification:**
+
+1. `GET /health` reports **0.8.1**.
+2. Platform admin list/patch, site clinician roster, and sponsor clinical-ops list still authorize as before.
+3. `GET /api/v1/roles` unchanged.
+
+**Evidence:**
+
+- Health version **0.8.1**; authorized list/patch responses for platform, site, and sponsor principals.
+
+---
+
 ## user v0.8.0
 
 **Build identifiers:** Tag `user/v0.8.0`; SDK **`authorization-in-the-middle/v0.7.1`**; **cdp-policies v0.1.0**.
