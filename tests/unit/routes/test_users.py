@@ -499,8 +499,8 @@ def test_patch_self_as_clinician_rejects_admin_fields(mock_load_user, client, rs
 
 @patch("src.services.user_service.get_user_or_404")
 def test_patch_rejects_domain_scope_fields(mock_load_user, client, rsa_keypair):
-    mock_load_user.return_value = _sample_user()
-    token = _token(rsa_keypair, sub=USER, actors=["operator"])
+    mock_load_user.return_value = _sample_user(OTHER)
+    token = _admin_token(rsa_keypair, sub=USER)
     response = client.patch(
         f"/api/v1/users/{OTHER}",
         headers={"Authorization": f"Bearer {token}", **OPERATOR_HEADERS},
@@ -512,8 +512,8 @@ def test_patch_rejects_domain_scope_fields(mock_load_user, client, rsa_keypair):
 
 @patch("src.services.user_service.get_user_or_404")
 def test_patch_rejects_immutable_idp_id(mock_load_user, client, rsa_keypair):
-    mock_load_user.return_value = _sample_user()
-    token = _token(rsa_keypair, sub=USER, actors=["operator"])
+    mock_load_user.return_value = _sample_user(OTHER)
+    token = _admin_token(rsa_keypair, sub=USER)
     response = client.patch(
         f"/api/v1/users/{OTHER}",
         headers={"Authorization": f"Bearer {token}", **OPERATOR_HEADERS},

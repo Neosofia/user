@@ -58,8 +58,8 @@ requires-dist = [
 
 [[package]]
 name = "authorization-in-the-middle"
-version = "0.5.0"
-source = { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.5.0/authorization_in_the_middle-0.5.0-py3-none-any.whl" }
+version = "0.7.1"
+source = { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.7.1/authorization_in_the_middle-0.7.1-py3-none-any.whl" }
 dependencies = [
     { name = "cedarpy" },
     { name = "flask" },
@@ -68,7 +68,7 @@ dependencies = [
     { name = "logenvelope" },
 ]
 wheels = [
-    { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.5.0/authorization_in_the_middle-0.5.0-py3-none-any.whl", hash = "sha256:ffe0d98bf03d171cb6958ecedf6d03f8a99eee2faa15bb8a944cba0696de2452" },
+    { url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.7.1/authorization_in_the_middle-0.7.1-py3-none-any.whl", hash = "sha256:0296fc0c305f787fc30cf2155b6b2909c1a578d0806ed5545dedaa5f21eb6671" },
 ]
 
 [package.metadata]
@@ -988,7 +988,7 @@ wheels = [
 
 [[package]]
 name = "user"
-version = "0.7.1"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1023,7 +1023,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "authentication-in-the-middle", url = "https://github.com/Neosofia/sdk/releases/download/authentication-in-the-middle/v0.9.8/authentication_in_the_middle-0.9.8-py3-none-any.whl" },
-    { name = "authorization-in-the-middle", url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.5.0/authorization_in_the_middle-0.5.0-py3-none-any.whl" },
+    { name = "authorization-in-the-middle", url = "https://github.com/Neosofia/sdk/releases/download/authorization-in-the-middle/v0.7.1/authorization_in_the_middle-0.7.1-py3-none-any.whl" },
     { name = "cedarpy", specifier = "==4.8.1" },
     { name = "flask", specifier = ">=3.0.0" },
     { name = "flask-cors", specifier = ">=6.0.2" },

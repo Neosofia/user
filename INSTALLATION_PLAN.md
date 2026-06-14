@@ -22,6 +22,27 @@ CDP stacks: see [CDP INSTALLATION_PLAN — Step 0](https://github.com/Neosofia/c
 
 ---
 
+## user v0.8.0
+
+**Build identifiers:** Tag `user/v0.8.0`; SDK **`authorization-in-the-middle/v0.7.1`**; **cdp-user-policies v0.3.0**.
+
+**Deploy:**
+
+1. Publish **cdp-user-policies v0.3.0** and rebuild user with `CDP_USER_POLICIES_IMAGE=ghcr.io/neosofia/cdp-user-policies:v0.3.0`.
+2. Deploy **user v0.8.0** (no new env vars).
+
+**Post-deploy verification:**
+
+1. `GET /health` reports **0.8.0**.
+2. `GET /api/v1/roles` returns `tenant_types` with full role slugs per org kind.
+3. `GET /api/v1/users` and authorized `PATCH /api/v1/users/{uuid}` succeed for platform and enterprise admins.
+
+**Evidence:**
+
+- Health version **0.8.0**; sample `GET /api/v1/roles` JSON; authorized list/patch responses.
+
+---
+
 ## user v0.7.0
 
 **Build identifiers:** Tag `user/v0.7.0`; SDK **`authorization-in-the-middle/v0.4.23`**; **cdp-user-policies v0.2.1** unchanged.
