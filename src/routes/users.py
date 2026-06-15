@@ -16,7 +16,7 @@ from src.services import user_service
 bp = Blueprint("users", __name__, url_prefix="/api/v1/users")
 tenant_users_bp = Blueprint("tenant_users", __name__, url_prefix="/api/v1/tenants")
 
-_DEFAULT_PAGE_SIZE = 20
+_DEFAULT_PAGE_SIZE = 15
 _MAX_PAGE_SIZE = 100
 
 

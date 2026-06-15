@@ -2,6 +2,12 @@
 
 What changed for user-service consumers. Deploy: [INSTALLATION_PLAN.md](INSTALLATION_PLAN.md).
 
+## [0.8.2] - 2026-06-16
+
+### Changed
+
+- Default tenant user list page size is **15** (was 20), matching the CDP Admin Users table.
+
 ## [0.8.1] - 2026-06-14
 
 ### Changed

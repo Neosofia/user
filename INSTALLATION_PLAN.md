@@ -22,6 +22,23 @@ CDP stacks: see [CDP INSTALLATION_PLAN — Step 0](https://github.com/Neosofia/c
 
 ---
 
+## user v0.8.2
+
+**Build:** **user v0.8.2** (default tenant user list page size **15**).
+
+**Deploy:**
+
+1. Pull `ghcr.io/neosofia/user:v0.8.2` (tag `user/v0.8.2`).
+
+**Post-deploy verification:**
+
+1. `GET /health` reports **0.8.2**.
+2. `GET /api/v1/tenants/{tenant}/users` without `page_size` returns at most 15 items.
+
+**Evidence:** Health JSON version field.
+
+---
+
 ## user v0.8.1
 
 **Build identifiers:** Tag `user/v0.8.1`; SDK **`authorization-in-the-middle/v0.7.1`**; **cdp-policies v0.2.0**.
