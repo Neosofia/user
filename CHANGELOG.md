@@ -2,6 +2,13 @@
 
 What changed for user-service consumers. Deploy: [INSTALLATION_PLAN.md](INSTALLATION_PLAN.md).
 
+## [0.8.3] - 2026-06-18
+
+### Fixed
+
+- Reject display code updates that collide with another user in the same tenant.
+- Service errors and API failures are recorded in operational logs at default verbosity.
+
 ## [0.8.2] - 2026-06-16
 
 ### Changed

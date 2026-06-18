@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 from typing import Any
 
 from flask import Flask, jsonify, request
@@ -71,7 +72,12 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(Exception)
     def handle_unexpected_error(exc: Exception):
-        log_event("request.unhandled_error", route=request.path, error_type=type(exc).__name__)
+        log_event(
+            "request.unhandled_error",
+            level=logging.WARNING,
+            route=request.path,
+            error_type=type(exc).__name__,
+        )
         return jsonify({"error": "internal_server_error"}), 500
 
     log_event("service.startup", env=settings.env, port=settings.port, policies_dir=str(settings.authorization_policies_dir))

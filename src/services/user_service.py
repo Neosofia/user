@@ -312,6 +312,15 @@ def create_user(db, actor_uuid: str, payload: dict) -> tuple[dict, bool]:
 
     row = db.get(User, user_uuid)
     created = row is None
+
+    if _display_code_in_use(
+        db,
+        tenant_id,
+        display_code,
+        exclude_uuid=None if created else user_uuid,
+    ):
+        raise ConflictError(_display_code_conflict_message(display_code))
+
     if row is None:
         row = User(
             uuid=user_uuid,
@@ -336,9 +345,6 @@ def create_user(db, actor_uuid: str, payload: dict) -> tuple[dict, bool]:
         row.roles = roles
         row.changed_by_uuid = actor_id
         row.changed_by_type = 1
-
-    if _display_code_in_use(db, tenant_id, display_code, exclude_uuid=None if created else user_uuid):
-        raise ConflictError(_display_code_conflict_message(display_code))
 
     try:
         db.commit()

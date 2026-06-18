@@ -22,6 +22,23 @@ CDP stacks: see [CDP INSTALLATION_PLAN — Step 0](https://github.com/Neosofia/c
 
 ---
 
+## user v0.8.3
+
+**Build identifiers:** **user v0.8.3**; SDK **`authorization-in-the-middle/v0.7.6`**.
+
+**Deploy:**
+
+1. Pull `ghcr.io/neosofia/user:v0.8.3` (tag `user/v0.8.3`).
+
+**Post-deploy verification:**
+
+1. `GET /health` reports **0.8.3**.
+2. `PATCH /api/v1/users/{uuid}` with a display code already used in the tenant returns **409**.
+
+**Evidence:** Health JSON version field; conflict response on duplicate display code.
+
+---
+
 ## user v0.8.2
 
 **Build:** **user v0.8.2** (default tenant user list page size **15**).

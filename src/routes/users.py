@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid as _uuid
 
 from authorization_in_the_middle.flask_identity import jwt_claim_principal_attributes
@@ -66,7 +67,7 @@ def list_users_platform_catalog():
             items, total = user_service.list_users(db, page, page_size, search)
             return jsonify({"items": items, "total": total, "page": page, "page_size": page_size}), 200
     except Exception as exc:
-        log_event("list_users_failed", error_type=type(exc).__name__)
+        log_event("list_users_failed", level=logging.WARNING, error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
 
 
@@ -98,7 +99,7 @@ def list_tenant_users(tenant_uuid: str):
                 "page_size": page_size,
             }), 200
     except Exception as exc:
-        log_event("list_tenant_users_failed", error_type=type(exc).__name__)
+        log_event("list_tenant_users_failed", level=logging.WARNING, error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
 
 
@@ -116,7 +117,7 @@ def create_user():
     except user_service.ConflictError as exc:
         return jsonify({"error": "conflict", "message": str(exc)}), 409
     except Exception as exc:
-        log_event("create_user_failed", error_type=type(exc).__name__)
+        log_event("create_user_failed", level=logging.WARNING, error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
 
 
@@ -153,7 +154,7 @@ def patch_user(user_uuid: str):
     except user_service.ConflictError as exc:
         return jsonify({"error": "conflict", "message": str(exc)}), 409
     except Exception as exc:
-        log_event("patch_user_failed", error_type=type(exc).__name__)
+        log_event("patch_user_failed", level=logging.WARNING, error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
 
 
@@ -178,7 +179,7 @@ def get_user_audits(user_uuid: str):
                 "page_size": page_size,
             }), 200
     except Exception as exc:
-        log_event("get_user_audits_failed", error_type=type(exc).__name__)
+        log_event("get_user_audits_failed", level=logging.WARNING, error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
 
 
@@ -201,5 +202,5 @@ def provision_user(user_uuid: str):
     except user_service.ConflictError as exc:
         return jsonify({"error": "conflict", "message": str(exc)}), 409
     except Exception as exc:
-        log_event("provision_user_failed", error_type=type(exc).__name__)
+        log_event("provision_user_failed", level=logging.WARNING, error_type=type(exc).__name__)
         return jsonify({"error": "database error"}), 500
