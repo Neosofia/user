@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "user"
-version = "0.8.3"
+version = "0.8.4"
 description = "Neosofia User Service — Tier-2 platform roles and scope attributes."
 requires-python = ">=3.14"
 authors = [{ name = "Neosofia", email = "platform@neosofia.com" }]
@@ -56,8 +56,8 @@ dev = [
     "jsonschema>=4.20.0",
     "requests>=2.33.0",
     "testcontainers>=3.7.0",
-    "pyjwt>=2.12.1",
-    "cryptography>=48.0.0",
+    "pyjwt>=2.13.0",
+    "cryptography>=48.0.1",
 ]
 
 [tool.hatch.metadata]

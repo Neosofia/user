@@ -2,6 +2,12 @@
 
 What changed for user-service consumers. Deploy: [INSTALLATION_PLAN.md](INSTALLATION_PLAN.md).
 
+## [0.8.4] - 2026-06-18
+
+### Fixed
+
+- Trivy lockfile scan: pin **`cryptography>=48.0.1`** and **`pyjwt>=2.13.0`** (dev group).
+
 ## [0.8.3] - 2026-06-18
 
 ### Fixed
