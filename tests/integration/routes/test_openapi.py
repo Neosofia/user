@@ -27,3 +27,37 @@ def test_openapi_spec_defines_error_schema():
     error_codes = error_schema["properties"]["error"]["enum"]
     assert "forbidden" in error_codes
     assert "authorization_unavailable" in error_codes
+
+
+def test_openapi_operation_ids_are_unique():
+    root = Path(__file__).resolve().parents[3]
+    spec = json.loads((root / "openapi.json").read_text())
+
+    operation_ids: list[str] = []
+    for path_item in spec["paths"].values():
+        for method, operation in path_item.items():
+            if method.startswith("x") or not isinstance(operation, dict):
+                continue
+            operation_id = operation.get("operationId")
+            if operation_id:
+                operation_ids.append(operation_id)
+
+    assert len(operation_ids) == len(set(operation_ids))
+
+
+def test_openapi_platform_user_list_supports_pagination_query():
+    root = Path(__file__).resolve().parents[3]
+    spec = json.loads((root / "openapi.json").read_text())
+
+    params = spec["paths"]["/api/v1/users"]["get"]["parameters"]
+    names = {param["name"] for param in params}
+    assert {"page", "page_size", "q"}.issubset(names)
+
+
+def test_openapi_user_audits_support_pagination_query():
+    root = Path(__file__).resolve().parents[3]
+    spec = json.loads((root / "openapi.json").read_text())
+
+    params = spec["paths"]["/api/v1/users/{user_uuid}/audits"]["get"]["parameters"]
+    names = {param["name"] for param in params}
+    assert {"page", "page_size"}.issubset(names)

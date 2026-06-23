@@ -35,10 +35,10 @@ os.environ["MIGRATION_DATABASE_URL"] = "postgresql+psycopg://template:dummy@loca
 _tests_dir = Path(__file__).resolve().parent
 _repo_root = _tests_dir.parent
 _base_policies = _repo_root / "policies"
-_fixture_product_cedar = _tests_dir / "fixtures" / "policies" / "product"
+_fixture_product_cedar = _tests_dir / "policies" / "user" / "cedar"
 _cdp_product_cedar = _repo_root.parent / "cdp" / "policies" / "user" / "cedar"
 _cdp_role_catalog = _repo_root.parent / "cdp" / "policies" / "user" / "role-catalog.json"
-_fixture_role_catalog = _tests_dir / "fixtures" / "policies" / "role-catalog.json"
+_fixture_role_catalog = _tests_dir / "policies" / "user" / "role-catalog.json"
 
 
 def _product_cedar_sources() -> list[Path]:

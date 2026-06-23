@@ -31,6 +31,13 @@
     },
     "/api/v1/users": {
       "get": {
+        "operationId": "listUsers",
+        "summary": "Platform user catalog (operator)",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } }
+        ],
         "responses": {
           "200": {
             "description": "User list",
@@ -43,6 +50,7 @@
         }
       },
       "post": {
+        "operationId": "createUser",
         "summary": "Create a registry user (e.g. patient enrollment)",
         "requestBody": {
           "required": true,
@@ -74,6 +82,7 @@
     },
     "/api/v1/tenants/{tenant_uuid}/users": {
       "get": {
+        "operationId": "listTenantUsers",
         "summary": "List users in a tenant",
         "parameters": [
           { "name": "tenant_uuid", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
@@ -95,6 +104,7 @@
     },
     "/api/v1/users/{user_uuid}": {
       "get": {
+        "operationId": "getUser",
         "parameters": [
           { "name": "user_uuid", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
         ],
@@ -110,6 +120,7 @@
         }
       },
       "patch": {
+        "operationId": "updateUser",
         "parameters": [
           { "name": "user_uuid", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
         ],
@@ -141,6 +152,7 @@
         }
       },
       "put": {
+        "operationId": "provisionUser",
         "tags": ["users"],
         "summary": "Provision or refresh a user registry row from Authentication",
         "parameters": [
@@ -184,8 +196,11 @@
     },
     "/api/v1/users/{user_uuid}/audits": {
       "get": {
+        "operationId": "listUserAudits",
         "parameters": [
-          { "name": "user_uuid", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+          { "name": "user_uuid", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }
         ],
         "responses": {
           "200": {
@@ -201,6 +216,7 @@
     },
     "/api/v1/roles": {
       "get": {
+        "operationId": "getRoleCatalog",
         "responses": {
           "200": {
             "description": "Role catalog",

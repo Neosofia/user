@@ -1,6 +1,6 @@
 // User registry authorization (ADR-0014).
 // Shared policies for every authenticated principal and service callers.
-// Product role rules (platform, site, sponsor, demo) ship in the CDP policy bundle (user/cedar/).
+// Product role rules and CDP service caller rules ship in the CDP policy bundle (user/cedar/).
 // Write entities carry presentFields, roleNamespaces (slug prefixes), and rolesExact (canonical role sets).
 
 // Allow users to read and update their own user record.

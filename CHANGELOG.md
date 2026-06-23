@@ -2,6 +2,13 @@
 
 What changed for user-service consumers. Deploy: [INSTALLATION_PLAN.md](INSTALLATION_PLAN.md).
 
+## [0.8.5] - 2026-06-23
+
+### Changed
+
+- Pin **`cdp-policies v0.3.1`** at image build — care-episode service caller Cedar (`user:list`, `user:read`) ships in the CDP product bundle, not `policies/default.cedar`.
+- OpenAPI documents `operationId` values and pagination query params on list and audit routes.
+
 ## [0.8.4] - 2026-06-18
 
 ### Fixed

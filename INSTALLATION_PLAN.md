@@ -22,6 +22,24 @@ CDP stacks: see [CDP INSTALLATION_PLAN — Step 0](https://github.com/Neosofia/c
 
 ---
 
+## user v0.8.5
+
+**Build identifiers:** **user v0.8.5**; **cdp-policies v0.3.1**; SDK **`authorization-in-the-middle/v0.7.6`**.
+
+**Deploy:**
+
+1. Confirm **`cdp-policies/v0.3.1`** is published (`ghcr.io/neosofia/cdp-policies:v0.3.1`).
+2. Pull `ghcr.io/neosofia/user:v0.8.5` (tag `user/v0.8.5`).
+
+**Post-deploy verification:**
+
+1. `GET /health` reports **0.8.5**.
+2. Care-episode service token can `GET /api/v1/tenants/{tenant_uuid}/users` and `GET /api/v1/users/{user_uuid}` (**200**, not **403**).
+
+**Evidence:** Health JSON version field; care-episode roster/profile enrichment loads registry display names.
+
+---
+
 ## user v0.8.4
 
 **Build identifiers:** **user v0.8.4**; SDK **`authorization-in-the-middle/v0.7.6`**.

@@ -236,6 +236,37 @@ def test_create_user_validates_required_fields(mock_get_principal, client, rsa_k
     assert "last_name" in response.json["message"]
 
 
+@patch("src.routes.users.SessionLocal")
+def test_list_tenant_users_allows_care_episode_service_token(mock_session, client, rsa_keypair):
+    mock_db = MagicMock()
+    mock_session.return_value.__enter__.return_value = mock_db
+    with patch("src.services.user_service.list_users", return_value=([_sample_user()], 1)) as mock_list:
+        token = _service_token(rsa_keypair, sub="care-episode")
+        response = client.get(
+            f"/api/v1/tenants/{TENANT}/users",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 200
+    assert response.json["total"] == 1
+    mock_list.assert_called_once()
+    assert mock_list.call_args.kwargs["tenant_uuid"] == TENANT
+
+
+@patch("src.services.user_service.get_user_or_404")
+@patch("src.routes.users.SessionLocal")
+def test_get_user_allows_care_episode_service_token(mock_session, mock_get_user, client, rsa_keypair):
+    mock_get_user.return_value = _sample_user()
+    mock_db = MagicMock()
+    mock_session.return_value.__enter__.return_value = mock_db
+    token = _service_token(rsa_keypair, sub="care-episode")
+    response = client.get(
+        f"/api/v1/users/{USER}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json["uuid"] == USER
+
+
 @patch("src.services.user_service.get_user_or_404")
 @patch("src.routes.users.SessionLocal")
 def test_list_users_clinician_can_list(mock_session, mock_get_principal, client, rsa_keypair):

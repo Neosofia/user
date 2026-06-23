@@ -8,7 +8,7 @@
 
 # cedarpy 4.8.1 needs the glibc manylinux wheel for attribute-based policy evaluation.
 ARG PYTHON_IMAGE=python:3.14-slim@sha256:d7a925f9eb9639a93e455b9f12c167569358818c0f62b51b88edbc8fcf34c421
-ARG USER_PRODUCT_POLICIES_IMAGE=ghcr.io/neosofia/cdp-policies:v0.2.0
+ARG USER_PRODUCT_POLICIES_IMAGE=ghcr.io/neosofia/cdp-policies:v0.3.1
 # Deprecated alias — use USER_PRODUCT_POLICIES_IMAGE.
 ARG CDP_POLICIES_IMAGE=${USER_PRODUCT_POLICIES_IMAGE}
 FROM ${USER_PRODUCT_POLICIES_IMAGE} AS product_policies
